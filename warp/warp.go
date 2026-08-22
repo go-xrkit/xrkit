@@ -151,3 +151,41 @@ func (m *Map) Apply(src []uint32, dst []uint32, dstStride, dstOff int, bg uint32
 		}
 	}
 }
+
+// ApplySwapRB is [Map.Apply] with the red and blue channels exchanged, and alpha
+// forced opaque, on the way through.
+//
+// It exists because the two ends of the pipeline disagree: macOS decodes into
+// BGRA, because that is what the display hardware wants, while go-widgets paints
+// RGBA. Converting in a separate pass would touch the SOURCE, which for a
+// 4K equirectangular frame is nearly twice as many pixels as the output; doing it
+// inside the gather costs a few instructions on pixels that are already in a
+// register.
+//
+// Alpha is forced to 0xff because a decoded video frame has no meaningful alpha
+// and some decoders leave the byte at zero — which would render the whole picture
+// invisible rather than obviously wrong.
+func (m *Map) ApplySwapRB(src []uint32, dst []uint32, dstStride, dstOff int, bg uint32) {
+	if m.off == nil {
+		return
+	}
+	n := int32(len(src))
+	for y := 0; y < m.H; y++ {
+		row := m.off[y*m.W : (y+1)*m.W]
+		out := dst[dstOff+y*dstStride:]
+		out = out[:m.W]
+		for x, o := range row {
+			if o < 0 || o >= n {
+				out[x] = bg
+				continue
+			}
+			out[x] = swapRB(src[o])
+		}
+	}
+}
+
+// swapRB exchanges the first and third bytes of a little-endian 32-bit pixel and
+// sets the fourth to 0xff. Read as bytes in memory that is B,G,R,A -> R,G,B,A.
+func swapRB(v uint32) uint32 {
+	return (v & 0x0000ff00) | ((v & 0x000000ff) << 16) | ((v >> 16) & 0x000000ff) | 0xff000000
+}

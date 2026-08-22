@@ -46,8 +46,8 @@ func BenchmarkApply(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				maps[0].Apply(src, dst, 3840, 0, 0)
-				maps[1].Apply(src, dst, 3840, outW, 0)
+				maps[0].ApplySwapRB(src, dst, 3840, 0, 0)
+				maps[1].ApplySwapRB(src, dst, 3840, outW, 0)
 			}
 			b.StopTimer()
 			perFrame := b.Elapsed().Seconds() / float64(b.N)

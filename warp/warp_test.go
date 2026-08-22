@@ -267,3 +267,52 @@ func TestSampleIndex(t *testing.T) {
 		t.Errorf("an eye rect running below the frame gave %d, want outside", got)
 	}
 }
+
+func TestSwapRB(t *testing.T) {
+	// Bytes in memory B,G,R,A read little-endian: 0xAARRGGBB.
+	for _, tc := range []struct {
+		name    string
+		in, out uint32
+	}{
+		// Pure blue in BGRA (B=255) must become pure blue in RGBA (third byte).
+		{"blue", 0x000000ff, 0xffff0000},
+		// Pure red in BGRA (R = third byte) becomes the first byte.
+		{"red", 0x00ff0000, 0xff0000ff},
+		// Green is untouched, being the second byte in both.
+		{"green", 0x0000ff00, 0xff00ff00},
+		{"white", 0x00ffffff, 0xffffffff},
+		{"black with zero alpha becomes opaque black", 0x00000000, 0xff000000},
+	} {
+		if got := swapRB(tc.in); got != tc.out {
+			t.Errorf("%s: swapRB(%#08x) = %#08x, want %#08x", tc.name, tc.in, got, tc.out)
+		}
+	}
+	// Applying it twice returns the original, save for the forced alpha — which
+	// is what makes it the same operation in both directions.
+	for _, v := range []uint32{0x00123456, 0xdeadbeef, 0x00ffffff} {
+		if got, want := swapRB(swapRB(v)), v|0xff000000; got != want {
+			t.Errorf("swapRB twice on %#08x = %#08x, want %#08x", v, got, want)
+		}
+	}
+}
+
+func TestApplySwapRB(t *testing.T) {
+	src := []uint32{0x000000ff, 0x00ff0000} // BGRA blue, BGRA red
+	m := &Map{W: 3, H: 1, off: []int32{0, 1, outside}}
+	dst := make([]uint32, 3)
+	m.ApplySwapRB(src, dst, 3, 0, 0x11223344)
+	want := []uint32{0xffff0000, 0xff0000ff, 0x11223344}
+	for i := range want {
+		if dst[i] != want[i] {
+			t.Fatalf("dst = %#v, want %#v", dst, want)
+		}
+	}
+	// An empty map is a no-op, not a panic.
+	(&Map{}).ApplySwapRB(src, dst, 3, 0, 0)
+	// And the out-of-range guard applies here too.
+	bad := &Map{W: 1, H: 1, off: []int32{999}}
+	bad.ApplySwapRB(src, dst, 1, 0, 0xbad)
+	if dst[0] != 0xbad {
+		t.Errorf("out-of-range offset gave %#08x, want the background", dst[0])
+	}
+}
