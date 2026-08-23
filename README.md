@@ -1,4 +1,10 @@
+<p align="center"><img src="https://raw.githubusercontent.com/go-xrkit/brand/main/social/go-xrkit.png" alt="go-xrkit" width="720"></p>
+
 # go-xrkit/xrkit
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/go-xrkit/xrkit.svg)](https://pkg.go.dev/github.com/go-xrkit/xrkit)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![CI](https://github.com/go-xrkit/xrkit/actions/workflows/ci.yml/badge.svg)](https://github.com/go-xrkit/xrkit/actions/workflows/ci.yml)
 
 The geometry an immersive video player needs, as pure Go with no dependencies:
 orientation, stereo packing, and the projections that turn a flat frame into a
