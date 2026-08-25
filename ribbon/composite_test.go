@@ -589,7 +589,7 @@ func TestFrameAllocatesNothing(t *testing.T) {
 func TestVerticalMappingIsATangent(t *testing.T) {
 	const panoH, srcH = 240, 1080
 	vSpan, halfH := rad(60), rad(30)/2
-	v := buildVTab(panoH, vSpan, halfH, srcH)
+	v := buildVTab(panoH, vSpan, 0, halfH, srcH)
 	if len(v.rows) == 0 || v.y0 == 0 {
 		t.Fatalf("the band should sit inside a 60° window, got y0=%d rows=%d", v.y0, len(v.rows))
 	}
@@ -618,7 +618,7 @@ func TestVerticalMappingIsATangent(t *testing.T) {
 		}
 	}
 	// A band taller than the window covers every row of it, top to bottom.
-	full := buildVTab(panoH, rad(20), rad(120)/2, srcH)
+	full := buildVTab(panoH, rad(20), 0, rad(120)/2, srcH)
 	if full.y0 != 0 || len(full.rows) != panoH {
 		t.Errorf("a band taller than the window covered rows %d..%d of %d",
 			full.y0, full.y0+len(full.rows), panoH)

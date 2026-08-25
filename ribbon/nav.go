@@ -31,7 +31,7 @@ const tail = 0.05
 // Mode is what the viewer is looking at.
 type Mode int
 
-// The two modes.
+// The three modes.
 const (
 	// ModeRibbon is the ordinary view: the band of screens, turning as the
 	// viewer scrolls.
@@ -40,6 +40,19 @@ const (
 	// still there, still turning, and the yaw still tracks the focused screen —
 	// so leaving fullscreen does not drop the viewer somewhere else.
 	ModeFullscreen
+	// ModeGallery shows every screen at once, as a grid in front of the viewer,
+	// with one of them selected — the answer to "where is the one three round the
+	// back", which the ribbon cannot give without turning through the ones in
+	// between.
+	//
+	// It is a mode of [Nav] rather than a thing the application drives beside it
+	// because it is exactly what [Mode] is for — what the viewer is looking at —
+	// and because opening it, cancelling it and choosing from it are all
+	// statements about where the viewer will be next, which is this type's job.
+	// It is entered only through [Nav.ToggleGallery], which needs a [Gallery] to
+	// enter it with; a mode with no gallery behind it is a state with no picture,
+	// and it should not be reachable.
+	ModeGallery
 )
 
 // String names the mode.
@@ -49,6 +62,8 @@ func (m Mode) String() string {
 		return "ribbon"
 	case ModeFullscreen:
 		return "fullscreen"
+	case ModeGallery:
+		return "gallery"
 	}
 	return fmt.Sprintf("Mode(%d)", int(m))
 }
@@ -74,6 +89,24 @@ type Nav struct {
 	// away is exactly how a 20° step becomes a 340° one.
 	yaw, target float64
 	mode        Mode
+	// gal is the open gallery, and nil at every other time. It is the whole of
+	// the gallery's state that Nav owns: the selection lives in the [Gallery],
+	// where it is always meaningful, rather than here where it would need a
+	// sentinel for "no gallery is open".
+	gal *Gallery
+	// saved is the ribbon as the gallery found it.
+	//
+	// Restoring it is an ASSIGNMENT of the numbers that were taken, not a
+	// recomputation from the focus. A yaw caught mid-turn is not any screen's
+	// centre, and re-deriving it would put the viewer back NEARLY where they
+	// were, which is a jump they can see; and it keeps [Nav.Moving] true across a
+	// cancelled gallery, because the turn the viewer interrupted is still owed to
+	// them.
+	saved struct {
+		yaw, target float64
+		focus       int
+		mode        Mode
+	}
 }
 
 // NewNav starts the viewer facing the first screen, at rest.
@@ -102,7 +135,15 @@ func (n *Nav) Mode() Mode { return n.mode }
 // SetMode switches between the ribbon and the promoted screen. An unknown mode
 // is refused rather than quietly treated as one of the two, since which one it
 // would be is not something a caller could reason about.
+//
+// [ModeGallery] is refused too, and it is not an unknown mode: it is a known one
+// that cannot be entered this way, because entering it means remembering the
+// ribbon to come back to and choosing a screen to start on, and neither of those
+// is expressible as a mode. [Nav.ToggleGallery] is the way in.
 func (n *Nav) SetMode(m Mode) error {
+	if m == ModeGallery {
+		return fmt.Errorf("%w: open it with ToggleGallery", ErrNoGallery)
+	}
 	if m != ModeRibbon && m != ModeFullscreen {
 		return fmt.Errorf("%w: %s", ErrMode, m)
 	}
@@ -111,12 +152,76 @@ func (n *Nav) SetMode(m Mode) error {
 }
 
 // ToggleFullscreen promotes the focused screen, or puts it back.
+//
+// It does nothing while the gallery is open. The gallery is modal — it is drawn
+// instead of the ribbon, not over it — and the two ways out of it are the key
+// that opened it and the one that chooses. Letting a third key leave by another
+// door would abandon the saved ribbon.
 func (n *Nav) ToggleFullscreen() {
-	if n.mode == ModeFullscreen {
+	switch n.mode {
+	case ModeGallery:
+		return
+	case ModeFullscreen:
 		n.mode = ModeRibbon
 		return
 	}
 	n.mode = ModeFullscreen
+}
+
+// ToggleGallery opens the gallery, or closes it and leaves the ribbon exactly as
+// it was.
+//
+// One method, because it is one key: the application binds ⌥⌘Space, and the same
+// press has to put the viewer back. Two methods would let an application open
+// the gallery twice and overwrite the ribbon it was going to restore.
+//
+// Opening selects the screen the viewer is FACING — [Ribbon.Nearest], not
+// [Nav.Focus] — so the gallery starts where they are even if a head tracker put
+// them between two screens. It also freezes the ribbon: see [Nav.Advance].
+//
+// Closing restores the yaw, the target, the focus and the MODE, so ⌥⌘Space from
+// a promoted screen and back again returns to that promoted screen. g must not
+// be nil, and must be a gallery of this Nav's ribbon: one built for another
+// ribbon would select screens that are not there.
+func (n *Nav) ToggleGallery(g *Gallery) error {
+	if n.mode == ModeGallery {
+		n.restore()
+		return nil
+	}
+	if g.r != n.r {
+		return fmt.Errorf("%w: %d screens, not %d", ErrNotOurs, g.r.Len(), n.r.Len())
+	}
+	n.saved.yaw, n.saved.target = n.yaw, n.target
+	n.saved.focus, n.saved.mode = n.focus, n.mode
+	n.gal, n.mode = g, ModeGallery
+	g.sel = n.r.Nearest(n.yaw)
+	return nil
+}
+
+// Choose leaves the gallery on the selected screen: back to the ribbon, focused
+// on it, turning to it the short way round.
+//
+// It restores the ribbon first and then aims, rather than aiming from wherever
+// the gallery left things. That is what makes choosing the screen you were
+// already looking at cost no motion at all, and what makes choosing any other
+// one a turn measured from where the viewer actually is.
+func (n *Nav) Choose() error {
+	if n.mode != ModeGallery {
+		return fmt.Errorf("%w: nothing to choose", ErrNoGallery)
+	}
+	sel := n.gal.Selected()
+	n.restore()
+	// Enter goes back to the BAND, whatever mode the gallery was opened from: the
+	// viewer asked for that screen, and the ribbon is where a screen is chosen.
+	n.mode = ModeRibbon
+	return n.GoTo(sel)
+}
+
+// restore puts the ribbon back exactly as the gallery found it and closes it.
+func (n *Nav) restore() {
+	n.yaw, n.target = n.saved.yaw, n.saved.target
+	n.focus, n.mode = n.saved.focus, n.saved.mode
+	n.gal = nil
 }
 
 // GoTo focuses screen i and heads for it the short way round.
@@ -165,9 +270,15 @@ func (n *Nav) SetYaw(yaw float64) { n.yaw, n.target = yaw, yaw }
 // always below 1 — the motion settles from one side and stops, rather than
 // ringing round the target the way a spring would — and the last [tail] radians
 // are covered at constant speed so that it actually arrives.
+//
+// It does nothing while the gallery is open. The ribbon is not on screen then,
+// so turning it is motion nobody can see — and an application that calls this
+// every frame, which is every application, would otherwise let a turn the viewer
+// interrupted quietly finish behind the gallery and then watch it snap back when
+// they cancelled.
 func (n *Nav) Advance(dt float64) {
 	d := n.target - n.yaw
-	if dt <= 0 || d == 0 {
+	if dt <= 0 || d == 0 || n.mode == ModeGallery {
 		return
 	}
 	if n.Tau <= 0 {

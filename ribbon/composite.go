@@ -119,9 +119,15 @@ type vtab struct {
 }
 
 // buildVTab maps panorama rows to source rows for a screen of srcH pixels whose
-// half-height on the unit cylinder is halfH, in a window spanning vSpan radians
-// of latitude over panoH rows.
-func buildVTab(panoH int, vSpan, halfH float64, srcH int) vtab {
+// middle is at height centre on the unit cylinder and whose half-height there is
+// halfH, in a window spanning vSpan radians of latitude over panoH rows.
+//
+// The centre is a HEIGHT rather than a latitude, and is 0 for everything on the
+// ribbon, which is a band at eye level. It is not 0 for a row of the gallery,
+// and it has to be a height for the same reason the mapping is a tangent: equal
+// angles are not equal distances up a cylinder, so a row placed by its latitude
+// would sit right and be the wrong size.
+func buildVTab(panoH int, vSpan, centre, halfH float64, srcH int) vtab {
 	v := vtab{}
 	for y := 0; y < panoH; y++ {
 		// Latitude of this row's centre, from the equirectangular convention
@@ -132,7 +138,7 @@ func buildVTab(panoH int, vSpan, halfH float64, srcH int) vtab {
 		// screen. THIS is the non-linear step: equal angles are not equal
 		// distances up a cylinder, and treating them as though they were makes
 		// the screens look right in the middle and squashed at the edges.
-		t := 0.5 - math.Tan(lat)/(2*halfH)
+		t := 0.5 - (math.Tan(lat)-centre)/(2*halfH)
 		if t < 0 {
 			continue // above the screen's top edge
 		}
@@ -182,10 +188,10 @@ func NewCompositor(r *Ribbon, pano Pano) (*Compositor, error) {
 	vSpan := rad(pano.Window.VSpanDeg)
 	for i := range c.band {
 		s := r.screens[i]
-		c.band[i] = buildVTab(pano.H, vSpan, r.halfH, s.H)
+		c.band[i] = buildVTab(pano.H, vSpan, 0, r.halfH, s.H)
 		// A promoted screen keeps its shape, so its height on the cylinder
 		// follows from the width it is given, exactly as on the ribbon.
-		c.full[i] = buildVTab(pano.H, vSpan, c.fullHalfSpan/s.Aspect(), s.H)
+		c.full[i] = buildVTab(pano.H, vSpan, 0, c.fullHalfSpan/s.Aspect(), s.H)
 		if len(c.band[i].rows) == 0 || len(c.full[i].rows) == 0 {
 			// Not one row of the buffer falls on the screen. That is a
 			// configuration mistake — a window too flat, or too few rows to

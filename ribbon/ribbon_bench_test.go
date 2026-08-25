@@ -141,3 +141,73 @@ func BenchmarkNewCompositor(b *testing.B) {
 		}
 	}
 }
+
+// benchGallery is the same desk seen all at once, in the view of a pair of
+// glasses that shows 51.57° of it.
+func benchGallery(b *testing.B) *Gallery {
+	b.Helper()
+	c, err := NewCompositor(benchRibbon(b), benchPano)
+	if err != nil {
+		b.Fatal(err)
+	}
+	g, err := NewGallery(c, View{HDeg: 51.57, VDeg: 28.38})
+	if err != nil {
+		b.Fatal(err)
+	}
+	return g
+}
+
+// BenchmarkGalleryFrame measures a gallery frame against the ribbon frame it
+// replaces. It has less to do — the cells never move, so there is no yaw to
+// resolve and no screen to leave out — and it must cost the same kind of number,
+// because it is drawn in the same 16.6 ms by the same renderer.
+//
+// It has no yaw argument, so the answer is the same every frame. That is not the
+// benchmark cheating: it is the reason a gallery is cheap, and an application
+// that cached the slice would pay nothing at all.
+func BenchmarkGalleryFrame(b *testing.B) {
+	g := benchGallery(b)
+	blits := g.Frame(nil)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		blits = g.Frame(blits[:0])
+	}
+	b.StopTimer()
+	perFrame := b.Elapsed().Seconds() / float64(b.N)
+	b.ReportMetric(perFrame*1e6, "µs/frame")
+	b.ReportMetric(perFrame/0.0166*100, "%of-budget")
+	b.ReportMetric(float64(len(blits)), "blits")
+}
+
+// BenchmarkGalleryMove measures the selection step, which happens once per
+// keypress and is here so that a later implementation reaching for a map or a
+// search cannot do it unnoticed.
+func BenchmarkGalleryMove(b *testing.B) {
+	g := benchGallery(b)
+	dirs := []Direction{Right, Down, Left, Up}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := g.Move(dirs[i%len(dirs)]); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkNewGallery measures the startup cost: choosing the grid shape, which
+// is quadratic in the number of screens, and a tangent per row per cell. It
+// happens once, beside the 56.5 ms the warp map takes to build.
+func BenchmarkNewGallery(b *testing.B) {
+	c, err := NewCompositor(benchRibbon(b), benchPano)
+	if err != nil {
+		b.Fatal(err)
+	}
+	v := View{HDeg: 51.57, VDeg: 28.38}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := NewGallery(c, v); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

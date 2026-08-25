@@ -129,6 +129,38 @@ Longitude grows to the **right**, matching `projection`; a `pose` yaw grows to
 the left. `Nav.Orientation` is the only place that sign is converted, and it has
 a test that closes the loop through `projection.Sample` rather than trusting it.
 
+### Gallery — all of them at once
+
+The ribbon answers *what is next to this one*. It cannot answer *where is the
+one three round the back*, because that screen is behind the viewer's head. The
+gallery is that question: every screen laid out as a grid in front of the
+viewer, arrows to move the selection, Enter to take one back to the ribbon.
+
+```go
+g, err := ribbon.NewGallery(c, ribbon.View{HDeg: 51.57, VDeg: 28.38})  // the FOV, not the buffer
+
+n.ToggleGallery(g)                        // ⌥⌘Space: opens on the screen in front
+g.Move(ribbon.Right)                      // arrows walk the grid
+n.Choose()                                // Enter: back to the ribbon, turning to it
+n.ToggleGallery(g)                        // ⌥⌘Space again: the ribbon exactly as it was
+
+blits = g.Frame(blits[:0])                // 112 ns, zero allocations, same Blits
+```
+
+The grid shape is **derived, not tabulated**: for each number of columns the
+rows follow, every screen is fitted inside its cell keeping its own aspect
+ratio, and the shape chosen is the one covering the most angular area. Six 16:9
+screens in a 16:9 view come out 3x2, not 6x1, because a row of six is limited by
+its width to a sixth of the view.
+
+Left and right **wrap** — that axis is the ribbon, and the ribbon is a circle,
+so holding right visits every screen and comes back. Up and down **clamp** —
+that axis exists only because a line was folded into a grid, and the fold has no
+seam to cross.
+
+The gallery is **head-locked** and produces the same `Blit`s as the ribbon, so
+the application's blitter draws it with no new code.
+
 ## `glasses` — which display is the headset, and how wide is the view
 
 XR glasses expose their 3D mode **as a display mode** and their identity as a

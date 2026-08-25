@@ -61,6 +61,13 @@ var (
 	ErrPanoKind     = errors.New("ribbon: panorama must be equirectangular")
 	ErrPanoSpan     = errors.New("ribbon: panorama span must be within (0, 360] x (0, 180]")
 	ErrPanoTooShort = errors.New("ribbon: panorama does not reach the band")
+
+	ErrViewSpan   = errors.New("ribbon: view span must be within (0, 360] x (0, 180]")
+	ErrViewWindow = errors.New("ribbon: view is not inside the panorama window")
+	ErrGalleryFit = errors.New("ribbon: screens do not fit in the view")
+	ErrDirection  = errors.New("ribbon: unknown direction")
+	ErrNoGallery  = errors.New("ribbon: the gallery is not open")
+	ErrNotOurs    = errors.New("ribbon: gallery is for another ribbon")
 )
 
 // Screen is one captured display, before it is placed.
