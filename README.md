@@ -7,15 +7,16 @@
 [![CI](https://github.com/go-xrkit/xrkit/actions/workflows/ci.yml/badge.svg)](https://github.com/go-xrkit/xrkit/actions/workflows/ci.yml)
 
 The geometry an immersive video player and an XR virtual desktop need, as pure
-Go with no dependencies: orientation, stereo packing, the projections that turn
-a flat frame into a world you can look around in, and the band of screens you
-scroll through inside it.
+Go: orientation, stereo packing, the projections that turn a flat frame into a
+world you can look around in, and the band of screens you scroll through inside
+it.
 
-`CGO_ENABLED=0`, no third-party modules, 100% statement coverage, and every
-package testable without a headset attached — which is the point. Sign and
-axis-order mistakes are invisible in a still frame and awful to wear, so they
-are pinned by tests against known directions rather than discovered by putting
-the glasses on.
+`CGO_ENABLED=0`, 100% statement coverage, and every package testable without a
+headset attached — which is the point. Sign and axis-order mistakes are
+invisible in a still frame and awful to wear, so they are pinned by tests
+against known directions rather than discovered by putting the glasses on. The
+geometry packages have no dependencies at all; `glasses` uses
+`hashicorp/hcl/v2` so a person can add their own hardware without a rebuild.
 
 ## `pose` — orientation
 
@@ -126,6 +127,99 @@ the yaw, so it is built once.
 Longitude grows to the **right**, matching `projection`; a `pose` yaw grows to
 the left. `Nav.Orientation` is the only place that sign is converted, and it has
 a test that closes the loop through `projection.Sample` rather than trusting it.
+
+## `glasses` — which display is the headset, and how wide is the view
+
+XR glasses expose their 3D mode **as a display mode** and their identity as a
+display **name**, so none of this needs a vendor SDK.
+
+```go
+d, err := glasses.ChooseDisplay(attached, "")      // the headset, not the laptop
+p, how := glasses.IdentifyDevice(d.Name, usbDev)   // usbDev may be nil
+h, v, ok := p.FOV(16.0 / 10)                       // horizontal and vertical
+```
+
+Manufacturers publish one angle and almost never say **which** angle. A
+horizontal figure read as a diagonal makes every angle too small — nothing looks
+broken, the picture is just in the wrong place. So each entry stores the figure
+next to the `Axis` it was established to span, and a figure whose axis nobody
+stated is reported as **not known** rather than used. Every figure carries the
+URL it came from.
+
+Where the axis is not written down it was proved arithmetically from the
+manufacturer's own equivalent-screen claim: a screen of *D* inches at *R* metres
+subtends `2·atan((D·0.0254/2)/R)` on its diagonal. XREAL sells the One Pro as
+"57° FoV with up to a 171 inch screen" at four metres, and 171″ at 4 m is
+**57.00°**. That closes it.
+
+**A model with no usable figure is a family entry**, and `Known()` reports false
+so the caller asks instead of guessing. That is a correct answer, not a gap.
+
+### Identification is not one thing
+
+The display name does not always name the model. Every VITURE panel reports the
+EDID name `VITURE`; every TCL and RayNeo panel reports `SmartGlasses` and shares
+one USB product id. XREAL's EDID *does* name the model, in two spellings
+depending on firmware. So a profile carries **both** display-name matches and
+USB identity, and `IdentifyDevice` says **how** it got its answer — a model
+confirmed by USB product id is a stronger result than a brand guessed from a
+display name, and the caller deserves to know which it got.
+
+Short names like `Air` and `One` are real firmware display names, and they only
+ever match the **whole** name — a ThinkVision `T24 Air` and an `AirPlay Display`
+are ordinary monitors, and taking one over full screen hijacks the machine
+somebody is working on.
+
+### What has actually been tested against hardware
+
+Almost everything here was read off a specification sheet, which says nothing
+about what a device calls itself or what modes it offers. So entries record how
+far they have been checked:
+
+| Model | Confidence | |
+|---|---|---|
+| VITURE Beast | `Observed` | connected over DisplayPort, 3840×1080 SBS and 1920×1200 2D seen, rendered to |
+| VITURE Luma Ultra | `Enumerated` | seen on USB as `35ca:1104 "VITURE Luma Ultra XR GLASSES"`; video not connected |
+| everything else | `Published` | sourced and cited, never plugged in here |
+
+**If you want a model supported and tested, send us one.** We will gladly add
+it, plug it in and move it up that table. No macOS display-name artifact has
+been read for any model yet, so treat macOS names as unverified.
+
+### Adding your own model
+
+The catalogue will always be behind the hardware. Declare a model in
+`glasses.hcl` under your platform's config directory — `~/.config/go-xrkit/` on
+Linux, `~/Library/Application Support/go-xrkit/` on macOS, `%AppData%\go-xrkit\`
+on Windows, or wherever `$XRKIT_GLASSES_CATALOGUE` points:
+
+```hcl
+glasses "ACME Visor 3" {
+  # What I saw: connected over USB-C, display name "ACME Visor 3",
+  # offered 3840x1080 side by side. The angle is ACME's own figure.
+  source = "https://example.invalid/visor-3#specifications"
+
+  match        = ["acme visor 3"]
+  usb_vendor   = "0x2b41"
+  usb_products = ["0x0110"]
+
+  fov        = 46
+  fov_axis   = "diagonal"      # required whenever fov is given
+  eye_width  = 1920
+  eye_height = 1080
+}
+```
+
+HCL, and the module's one dependency, because a figure here is only worth
+something with its provenance attached and HCL has **comments**: what you
+measured goes next to the number you measured it from.
+
+`glasses.LoadUserCatalogue()` reads it; no file at all is the normal case and is
+not an error. A file that exists and is wrong **is** an error, naming the file,
+the line and the block, and loads nothing — a catalogue line that quietly does
+nothing is the same invisible failure as a wrong angle. Omit `fov` for a family
+entry. Your entry wins ties against the built-in catalogue, so a figure this
+package got wrong can be corrected without waiting for a release.
 
 ## Status
 

@@ -10,6 +10,73 @@
 // None of it involves a vendor SDK. XR glasses expose their 3D mode AS A DISPLAY
 // MODE and their identity as a display NAME, so everything here is arithmetic
 // over what the windowing system already reports.
+//
+// # What has actually been tested against hardware
+//
+// Almost every figure here was read off a specification sheet, and a
+// specification sheet says nothing about the two things this package most needs
+// to know: what the device calls itself, and what modes it offers. So each entry
+// records a [Confidence], and today the honest list is short:
+//
+//   - VITURE Beast — Observed. Connected over DisplayPort, seen presenting a
+//     3840x1080 side-by-side 3D mode and a 1920x1200 2D mode, and rendered to.
+//   - VITURE Luma Ultra — Enumerated. Seen on the USB bus here as
+//     35ca:1104 "VITURE Luma Ultra XR GLASSES". Its video was NOT connected, so
+//     its display name and its modes are still unconfirmed.
+//
+// Everything else is Published: sourced, cited, and never plugged in by anyone
+// here. Display names and USB ids for those came from decoded EDID binaries,
+// kernel logs and other people's compositor configurations, and none of the
+// artifacts behind them are from macOS — so a macOS display name should be
+// treated as unverified until one is read.
+//
+// IF YOU WANT A MODEL SUPPORTED AND TESTED, SEND US ONE. We will gladly add it,
+// plug it in, and move it up that list. Failing that, the next best thing is to
+// declare it yourself and tell us what you saw.
+//
+// # Adding a model without rebuilding
+//
+// The built-in catalogue only names hardware somebody here has held or found a
+// specification sheet for, and it is always going to be behind. So a person can
+// declare their own model in an HCL file and it takes effect with no Go
+// toolchain involved. The file lives at
+//
+//	~/Library/Application Support/go-xrkit/glasses.hcl   (macOS)
+//	~/.config/go-xrkit/glasses.hcl                       (Linux, or $XDG_CONFIG_HOME)
+//	%AppData%\go-xrkit\glasses.hcl                       (Windows)
+//
+// and $XRKIT_GLASSES_CATALOGUE overrides that. It looks like this:
+//
+//	glasses "ACME Visor 3" {
+//	  # What I saw: connected over USB-C, display name "ACME Visor 3",
+//	  # offered 3840x1080 side by side. The angle is ACME's own figure.
+//	  source = "https://example.invalid/visor-3#specifications"
+//
+//	  match        = ["acme visor 3"]
+//	  usb_vendor   = "0x2b41"
+//	  usb_products = ["0x0110"]
+//
+//	  fov        = 46
+//	  fov_axis   = "diagonal"
+//	  eye_width  = 1920
+//	  eye_height = 1080
+//	}
+//
+// HCL because a figure here is only worth something with its provenance
+// attached, and HCL has comments: what you measured goes next to the number you
+// measured it from. See [LoadCatalogueFile] for the whole schema.
+//
+// An application reads it by calling [LoadUserCatalogue] once at start-up and
+// showing the error if there is one. Having NO file is the normal case and is
+// not an error, so that call costs a failed stat and nothing else; a file that
+// exists and is wrong fails loudly, naming the file, the line and the block,
+// because a catalogue line that quietly does nothing is the same invisible
+// failure as a wrong angle.
+//
+// A model declared this way wins over a built-in entry with the same match, so
+// a figure this package got wrong can be corrected on the machine that noticed
+// it. [Register] does the same from Go, for an application that keeps its
+// settings somewhere else entirely.
 package glasses
 
 import (
