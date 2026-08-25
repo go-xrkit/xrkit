@@ -5,6 +5,8 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-xrkit/xrkit.svg)](https://pkg.go.dev/github.com/go-xrkit/xrkit)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![CI](https://github.com/go-xrkit/xrkit/actions/workflows/ci.yml/badge.svg)](https://github.com/go-xrkit/xrkit/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/go-xrkit/xrkit)](https://goreportcard.com/report/github.com/go-xrkit/xrkit)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-1a7f37)](#status)
 
 The geometry an immersive video player and an XR virtual desktop need, as pure
 Go: orientation, stereo packing, the projections that turn a flat frame into a

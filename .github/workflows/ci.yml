@@ -11,6 +11,19 @@ permissions:
 
 # Track the latest stable Go (org convention). go.mod floor is 1.26.4.
 jobs:
+  # A workflow that fails to PARSE reports nothing at all -- no red cross, no
+  # run, just silence that reads exactly like success. actionlint is the only
+  # thing that catches it, so it is the first lane here.
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
   # Every file must be gofmt-clean.
   gofmt:
     runs-on: ubuntu-latest
