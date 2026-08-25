@@ -7,6 +7,7 @@ package glasses
 import (
 	"math"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -21,7 +22,7 @@ import (
 func TestFOVRecomposesToTheDiagonal(t *testing.T) {
 	for _, diag := range []float64{30, 46, 50, 52, 58, 90, 120} {
 		for _, aspect := range []float64{16.0 / 10, 16.0 / 9, 4.0 / 3, 1, 21.0 / 9, 0.5} {
-			p := Profile{DiagonalFOV: diag}
+			p := Profile{PublishedFOV: diag, Axis: AxisDiagonal}
 			h, v, ok := p.FOV(aspect)
 			if !ok {
 				t.Fatalf("diag=%g aspect=%g: FOV reported not-ok for a valid pair", diag, aspect)
@@ -44,11 +45,37 @@ func TestFOVRecomposesToTheDiagonal(t *testing.T) {
 	}
 }
 
+// TestFOVOnAHorizontalFigureDerivesOnlyTheVertical. A horizontal figure needs no
+// decomposition: it IS the horizontal angle, and only the vertical is worked
+// out. Handing the same number to both axes is exactly the confusion the Axis
+// field exists to stop, so the two paths are pinned against each other here.
+func TestFOVOnAHorizontalFigureDerivesOnlyTheVertical(t *testing.T) {
+	for _, aspect := range []float64{16.0 / 10, 16.0 / 9, 1} {
+		p := Profile{PublishedFOV: 46, Axis: AxisHorizontal}
+		h, v, ok := p.FOV(aspect)
+		if !ok {
+			t.Fatalf("aspect=%g: FOV reported not-ok for a horizontal figure", aspect)
+		}
+		if math.Abs(h-46) > 1e-9 {
+			t.Errorf("aspect=%g: H=%g, but a horizontal figure IS the horizontal angle", aspect, h)
+		}
+		if got := math.Tan(rad(h)/2) / math.Tan(rad(v)/2); math.Abs(got-aspect) > 1e-9 {
+			t.Errorf("aspect=%g: derived tangents have aspect %g", aspect, got)
+		}
+		// The same number read as a diagonal gives a NARROWER view. That gap is
+		// the silent failure: it renders, in the wrong place.
+		hd, _, _ := Profile{PublishedFOV: 46, Axis: AxisDiagonal}.FOV(aspect)
+		if aspect != 1 && hd >= h {
+			t.Errorf("aspect=%g: read as a diagonal 46° gives H=%g, not narrower than %g", aspect, hd, h)
+		}
+	}
+}
+
 // TestFOVIsWiderThanItIsTall pins the orientation down. A sign or a reciprocal
 // slipped in the derivation would still recompose to the diagonal, so the
 // round-trip alone cannot catch it.
 func TestFOVIsWiderThanItIsTall(t *testing.T) {
-	p := Profile{DiagonalFOV: 58}
+	p := Profile{PublishedFOV: 58, Axis: AxisDiagonal}
 	h, v, ok := p.FOV(16.0 / 10)
 	if !ok {
 		t.Fatal("FOV not ok for a published diagonal")
@@ -74,12 +101,15 @@ func TestFOVRefusesWhatItCannotKnow(t *testing.T) {
 		p      Profile
 		aspect float64
 	}{
-		{"no published diagonal", Profile{}, 1.6},
-		{"negative diagonal", Profile{DiagonalFOV: -10}, 1.6},
-		{"degenerate diagonal", Profile{DiagonalFOV: 180}, 1.6},
-		{"zero aspect", Profile{DiagonalFOV: 52}, 0},
-		{"negative aspect", Profile{DiagonalFOV: 52}, -1.6},
-		{"infinite aspect", Profile{DiagonalFOV: 52}, math.Inf(1)},
+		{"no published figure", Profile{}, 1.6},
+		{"negative figure", Profile{PublishedFOV: -10, Axis: AxisDiagonal}, 1.6},
+		{"degenerate figure", Profile{PublishedFOV: 180, Axis: AxisDiagonal}, 1.6},
+		// The one that matters: a real number nobody said the axis of.
+		{"axis unstated", Profile{PublishedFOV: 43.5}, 1.6},
+		{"axis out of range", Profile{PublishedFOV: 52, Axis: Axis(9)}, 1.6},
+		{"zero aspect", Profile{PublishedFOV: 52, Axis: AxisDiagonal}, 0},
+		{"negative aspect", Profile{PublishedFOV: 52, Axis: AxisDiagonal}, -1.6},
+		{"infinite aspect", Profile{PublishedFOV: 52, Axis: AxisDiagonal}, math.Inf(1)},
 	} {
 		h, v, ok := tc.p.FOV(tc.aspect)
 		if ok {
@@ -88,16 +118,20 @@ func TestFOVRefusesWhatItCannotKnow(t *testing.T) {
 		if h != 0 || v != 0 {
 			t.Errorf("%s: returned H=%g V=%g instead of zeroes", tc.name, h, v)
 		}
+		if tc.p.Known() && tc.aspect > 0 && !math.IsInf(tc.aspect, 0) {
+			t.Errorf("%s: Known() is true for a figure FOV would not use", tc.name)
+		}
 	}
 }
 
 func TestKnownSeparatesAFigureFromAFamily(t *testing.T) {
+	isolate(t)
 	beast, ok := Identify("VITURE Beast")
 	if !ok || !beast.Known() {
 		t.Fatalf("VITURE Beast: found=%v known=%v, want a published figure", ok, beast.Known())
 	}
 	// A family entry identifies the hardware without claiming to know its optics.
-	fam, ok := Identify("VITURE Pro XR")
+	fam, ok := Identify("VITURE")
 	if !ok {
 		t.Fatal("a VITURE display was not identified at all")
 	}
@@ -120,28 +154,78 @@ func TestEyeAspect(t *testing.T) {
 	}
 }
 
+func TestEnumsName(t *testing.T) {
+	for _, tc := range []struct{ got, want string }{
+		{AxisUnstated.String(), "unstated"},
+		{AxisDiagonal.String(), "diagonal"},
+		{AxisHorizontal.String(), "horizontal"},
+		{Axis(9).String(), "Axis(9)"},
+		{Published.String(), "published specification"},
+		{Enumerated.String(), "enumerated over USB"},
+		{Observed.String(), "observed as a display"},
+		{Confidence(9).String(), "Confidence(9)"},
+		{NotIdentified.String(), "not identified"},
+		{ByUSBProduct.String(), "USB product"},
+		{ByDisplayName.String(), "display name"},
+		{ByUSBVendor.String(), "USB vendor"},
+		{How(9).String(), "How(9)"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("String() = %q, want %q", tc.got, tc.want)
+		}
+	}
+}
+
 // TestIdentifyPrefersTheLongestMatch is the reason the catalogue's order is not
-// load-bearing. "XREAL One S" contains "xreal", so a first-match rule would
-// classify a known model as an unknown family, and the failure would be a
-// missing field of view rather than an error.
+// load-bearing. "XREAL One Pro" contains "xreal one", so a first-match rule
+// could classify one known model as another, and the failure would be a wrong
+// field of view rather than an error.
 func TestIdentifyPrefersTheLongestMatch(t *testing.T) {
+	isolate(t)
 	for _, tc := range []struct {
 		name  string
 		want  string
 		known bool
 	}{
-		{"XREAL One S", "XREAL One S", true},
-		{"XREAL 1S", "XREAL One S", true},
-		{"xreal one s (USB-C)", "XREAL One S", true},
-		{"XREAL One Pro", "XREAL glasses", false},
-		{"XREAL Air 2", "XREAL glasses", false},
-		{"nreal air", "XREAL glasses", false},
+		// The One family all contain each other's prefixes. Each must resolve
+		// to itself, and none to the family.
+		{"XREAL One", "XREAL One", true},
+		{"XREAL One Pro", "XREAL One Pro", true},
+		{"XREAL One S", "XREAL 1S", true},
+		{"XREAL 1S", "XREAL 1S", true},
+		{"xreal one pro (USB-C)", "XREAL One Pro", true},
+		// So does the Air family.
+		{"XREAL Air", "XREAL Air", true},
+		{"XREAL Air 2", "XREAL Air 2", true},
+		{"XREAL Air 2 Pro", "XREAL Air 2 Pro", true},
+		{"XREAL Air 2 Ultra", "XREAL Air 2 Ultra", true},
+		{"nreal air", "XREAL Air", true},
+		{"nreal light", "XREAL Light", true},
+		{"XREAL", "XREAL glasses", false},
+		{"ROG XREAL R1", "ROG XREAL R1", true},
+		// VITURE: the model matches only fire where a host surfaces more than
+		// the bare EDID name, but they must be right when they do.
 		{"VITURE Beast", "VITURE Beast", true},
-		{"VITURE Luma Ultra", "VITURE Luma Ultra", true},
-		{"VITURE Luma Pro", "VITURE glasses", false},
-		{"Rokid Max", "Rokid glasses", false},
-		{"TCL NXTWEAR S", "RayNeo glasses", false},
-		{"RayNeo X2", "RayNeo glasses", false},
+		{"VITURE Luma Ultra XR GLASSES", "VITURE Luma Ultra", true},
+		{"VITURE Luma Pro", "VITURE Luma Pro", true},
+		{"VITURE Luma", "VITURE Luma", true},
+		{"VITURE Pro", "VITURE Pro", true},
+		{"VITURE One Lite", "VITURE One Lite", true},
+		{"VITURE", "VITURE glasses", false},
+		{"VITURE One", "VITURE glasses", false},
+		// The Pro 2 must NOT inherit the Pro's 46°, which is the whole reason
+		// its entry is there.
+		{"VITURE Pro 2", "VITURE Pro 2", false},
+		{"Rokid Max", "Rokid Max", true},
+		{"Rokid Max 2", "Rokid Max 2", true},
+		{"Rokid Air", "Rokid glasses", false},
+		{"RayNeo Air 3s", "RayNeo Air 3s", true},
+		{"RayNeo Air 3s Pro", "RayNeo Air 3s Pro", true},
+		{"SmartGlasses", "RayNeo glasses", false},
+		{"TCL NXTWEAR S", "TCL NXTWEAR S", true},
+		// And the S+ must not inherit the S's 45°.
+		{"TCL NXTWEAR S+", "TCL NXTWEAR S+", false},
+		{"TCL NXTWEAR AIR", "TCL NXTWEAR AIR", true},
 		{"INMO Air 2", "INMO glasses", false},
 		{"Even Realities G1", "Even Realities glasses", false},
 		{"Brilliant Frame", "Brilliant Labs glasses", false},
@@ -160,15 +244,184 @@ func TestIdentifyPrefersTheLongestMatch(t *testing.T) {
 	}
 }
 
+// TestShortNamesMatchOnlyTheWholeName is the trap this catalogue must not fall
+// into. Firmware really does report a display name of "Air" or "One", so those
+// have to be recognised — but "air" as a SUBSTRING also claims an AirPlay
+// display and a ThinkVision T24 Air, both of which are ordinary screens. Taking
+// over the wrong monitor full screen hijacks the machine the user is on.
+func TestShortNamesMatchOnlyTheWholeName(t *testing.T) {
+	isolate(t)
+	for name, want := range map[string]string{
+		"Air":         "XREAL Air",
+		"air":         "XREAL Air",
+		"  Air  ":     "XREAL Air",
+		"Air 2":       "XREAL Air 2",
+		"Air 2 Pro":   "XREAL Air 2 Pro",
+		"Air 2 Ultra": "XREAL Air 2 Ultra",
+		"One":         "XREAL One",
+		"One Pro":     "XREAL One Pro",
+		"1S":          "XREAL 1S",
+		"Light":       "XREAL Light",
+	} {
+		p, ok := Identify(name)
+		if !ok || p.Model != want {
+			t.Errorf("%q identified as %+v (ok=%v), want %q", name, p.Model, ok, want)
+		}
+	}
+	for _, name := range []string{
+		"AirPlay Display", "T24 Air", "ThinkVision T24 Air", "Airport Display",
+		"One Plus Monitor", "LG UltraFine", "Lightroom Display",
+	} {
+		if p, ok := Identify(name); ok {
+			t.Errorf("%q was identified as %q; an ordinary monitor must not be taken for a headset",
+				name, p.Model)
+		}
+	}
+}
+
 func TestIdentifyRejectsOrdinaryMonitors(t *testing.T) {
-	for _, name := range []string{"", "DELL U2720Q", "Built-in Retina Display", "LG UltraFine"} {
+	isolate(t)
+	for _, name := range []string{"", "   ", "DELL U2720Q", "Built-in Retina Display", "LG UltraFine"} {
 		if p, ok := Identify(name); ok {
 			t.Errorf("%q was identified as %q", name, p.Model)
 		}
 	}
 }
 
+// TestIdentifyDeviceUsesTheStrongestEvidence. A USB product id names a MODEL,
+// and for VITURE panels it is the only thing that does: every one of them
+// reports the display name "VITURE".
+func TestIdentifyDeviceUsesTheStrongestEvidence(t *testing.T) {
+	isolate(t)
+	// The measured Luma Ultra: bare display name, but the USB device is
+	// unambiguous.
+	p, how := IdentifyDevice("VITURE", &USB{Vendor: 0x35ca, Product: 0x1104,
+		Name: "VITURE Luma Ultra XR GLASSES"})
+	if how != ByUSBProduct || p.Model != "VITURE Luma Ultra" {
+		t.Errorf("IdentifyDevice = %q by %v, want the Luma Ultra by USB product", p.Model, how)
+	}
+	if p.Confidence != Enumerated {
+		t.Errorf("Luma Ultra confidence = %v, want %v", p.Confidence, Enumerated)
+	}
+
+	// A product id nobody has listed still resolves through the product string.
+	p, how = IdentifyDevice("VITURE", &USB{Vendor: 0x35ca, Product: 0x9999,
+		Name: "VITURE Beast XR Glasses"})
+	if how != ByUSBProduct || p.Model != "VITURE Beast" {
+		t.Errorf("IdentifyDevice = %q by %v, want the Beast by its product string", p.Model, how)
+	}
+
+	// Neither id nor string: the brand, and the caller is told that is all it is.
+	p, how = IdentifyDevice("", &USB{Vendor: 0x35ca, Product: 0x9999, Name: "XR GLASSES"})
+	if how != ByUSBVendor || p.Model != "VITURE glasses" {
+		t.Errorf("IdentifyDevice = %q by %v, want the VITURE family by vendor", p.Model, how)
+	}
+
+	// A display name beats a bare vendor, because it names a model.
+	p, how = IdentifyDevice("Rokid Max 2", &USB{Vendor: 0x04d2, Product: 0x1234})
+	if how != ByDisplayName || p.Model != "Rokid Max 2" {
+		t.Errorf("IdentifyDevice = %q by %v, want the Max 2 by display name", p.Model, how)
+	}
+
+	// Nothing at all.
+	if p, how := IdentifyDevice("DELL U2720Q", &USB{Vendor: 0x1234, Product: 0x5678}); how != NotIdentified {
+		t.Errorf("IdentifyDevice = %q by %v, want nothing", p.Model, how)
+	}
+	if _, how := IdentifyDevice("DELL U2720Q", nil); how != NotIdentified {
+		t.Errorf("a monitor with no USB device was identified as %v", how)
+	}
+}
+
+// TestAVendorIdAloneDoesNotMakeGlasses. 0x1bbb is TCL's vendor id for phones as
+// well as headsets, so the RayNeo entry names its product id and gets no
+// vendor-only fallback. A phone must not become a headset.
+func TestAVendorIdAloneDoesNotMakeGlasses(t *testing.T) {
+	isolate(t)
+	p, how := IdentifyDevice("", &USB{Vendor: 0x1bbb, Product: 0xaf50,
+		Name: "Smart Glasses Human interface"})
+	if how != ByUSBProduct || p.Model != "RayNeo glasses" {
+		t.Errorf("IdentifyDevice = %q by %v, want the RayNeo family by product id", p.Model, how)
+	}
+	if p, how := IdentifyDevice("", &USB{Vendor: 0x1bbb, Product: 0x0001, Name: "TCL Phone"}); how != NotIdentified {
+		t.Errorf("a TCL phone was identified as %q by %v", p.Model, how)
+	}
+}
+
+// TestCatalogueEntriesAreWellFormed is a proof about the DATA, not the code. It
+// is the one place a copy-and-paste slip in a hand-written table gets caught:
+// a figure with no axis, a figure with no source, a model nothing can select,
+// or two entries with the same name.
+func TestCatalogueEntriesAreWellFormed(t *testing.T) {
+	seen := map[string]bool{}
+	for _, p := range catalogue {
+		if p.Model == "" {
+			t.Error("an entry has no model name")
+			continue
+		}
+		if seen[p.Model] {
+			t.Errorf("%q appears twice", p.Model)
+		}
+		seen[p.Model] = true
+		if len(p.match)+len(p.exact)+len(p.usbProducts)+len(p.usbMatch) == 0 && p.usbVendor == 0 {
+			t.Errorf("%q: nothing can select it", p.Model)
+		}
+		for _, m := range append(append([]string{}, p.match...), append(p.exact, p.usbMatch...)...) {
+			if m != strings.ToLower(m) || strings.TrimSpace(m) != m || m == "" {
+				t.Errorf("%q: match string %q is not a trimmed, lower-case, non-empty string", p.Model, m)
+			}
+		}
+		if len(p.usbProducts) > 0 && p.usbVendor == 0 {
+			t.Errorf("%q: product ids with no vendor id", p.Model)
+		}
+		// A vendor id with no product ids beside it is a BRAND fallback: it
+		// answers for every device of that vendor. A model entry must never be
+		// one, or one model's figure would answer for its whole brand.
+		if p.usbVendor != 0 && len(p.usbProducts) == 0 && p.Known() {
+			t.Errorf("%q: a bare vendor id would lend its %v° to every device of that brand",
+				p.Model, p.PublishedFOV)
+		}
+		if p.PublishedFOV != 0 && !(p.PublishedFOV > 0 && p.PublishedFOV < 180) {
+			t.Errorf("%q: %v is not an angle", p.Model, p.PublishedFOV)
+		}
+		// The rule this catalogue lives by: a figure carries the URL it came
+		// from, and says which angle it is.
+		if p.PublishedFOV > 0 {
+			if p.Source == "" {
+				t.Errorf("%q publishes %v° with no source", p.Model, p.PublishedFOV)
+			}
+			if p.Axis == AxisUnstated {
+				t.Errorf("%q publishes %v° with no axis, so it can never be used", p.Model, p.PublishedFOV)
+			}
+		}
+		if (p.EyeWidth == 0) != (p.EyeHeight == 0) || p.EyeWidth < 0 || p.EyeHeight < 0 {
+			t.Errorf("%q: %dx%d is half a panel size", p.Model, p.EyeWidth, p.EyeHeight)
+		}
+	}
+}
+
+// TestEveryCatalogueEntryIdentifiesItself walks the table and feeds each of its
+// own match strings back through Identify. An entry whose match strings are all
+// swallowed by a longer entry is dead weight that looks alive.
+func TestEveryCatalogueEntryIdentifiesItself(t *testing.T) {
+	isolate(t)
+	for _, p := range catalogue {
+		if len(p.match)+len(p.exact) == 0 {
+			continue // USB-only, covered by the device tests
+		}
+		reachable := false
+		for _, m := range append(append([]string{}, p.match...), p.exact...) {
+			if got, ok := Identify(m); ok && got.Model == p.Model {
+				reachable = true
+			}
+		}
+		if !reachable {
+			t.Errorf("%q: none of its own match strings resolve to it", p.Model)
+		}
+	}
+}
+
 func TestModelsAreListedInOrder(t *testing.T) {
+	isolate(t)
 	got := Models()
 	if len(got) != len(catalogue) {
 		t.Fatalf("Models() listed %d of %d entries", len(got), len(catalogue))
