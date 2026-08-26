@@ -2,6 +2,7 @@ package ribbon
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 
@@ -432,5 +433,98 @@ func TestTurningRightMovesScreensLeft(t *testing.T) {
 	}
 	if !closeTo(after, -rad(5)) {
 		t.Errorf("after turning 5° right, screen 1 is at %.3f°, want -5°", deg(after))
+	}
+}
+
+// fakeGallery is a gallery this package did not build: the flat grid a consumer
+// with side-by-side screens folds for itself. It knows nothing about cylinders,
+// cells or blits, and the navigator must not need it to.
+type fakeGallery struct {
+	n   int
+	sel int
+}
+
+func (f *fakeGallery) Len() int      { return f.n }
+func (f *fakeGallery) Selected() int { return f.sel }
+func (f *fakeGallery) Select(i int) error {
+	if i < 0 || i >= f.n {
+		return fmt.Errorf("fake gallery: no screen %d of %d", i, f.n)
+	}
+	f.sel = i
+	return nil
+}
+
+// TestANavigatorWillDriveAGalleryItDidNotBuild.
+//
+// A consumer whose screens are FLAT folds them into a grid of its own, and the
+// navigator has nothing to say about how that grid is drawn. It needs the
+// selection and no more, so requiring one concrete type would have forced a
+// copy of every line of save-and-restore below into that consumer.
+func TestANavigatorWillDriveAGalleryItDidNotBuild(t *testing.T) {
+	r := mustPlace(t, desk, spread(3))
+	n := NewNav(r)
+	if err := n.GoTo(2); err != nil {
+		t.Fatal(err)
+	}
+	n.Advance(10) // arrive
+	yaw, focus := n.Yaw(), n.Focus()
+
+	g := &fakeGallery{n: r.Len()}
+	if err := n.ToggleGallery(g); err != nil {
+		t.Fatalf("ToggleGallery = %v", err)
+	}
+	if n.Mode() != ModeGallery {
+		t.Fatalf("mode is %v", n.Mode())
+	}
+	// Opening selects the screen the viewer is FACING, through the interface.
+	if got, want := g.Selected(), r.Nearest(yaw); got != want {
+		t.Errorf("the gallery opened on %d, want the screen being faced, %d", got, want)
+	}
+
+	// Choosing another one goes there, and back to the band.
+	g.sel = r.Len() - 1
+	if err := n.Choose(); err != nil {
+		t.Fatalf("Choose = %v", err)
+	}
+	if n.Mode() != ModeRibbon {
+		t.Errorf("choosing left the mode at %v", n.Mode())
+	}
+	if got, want := n.Focus(), r.Len()-1; got != want {
+		t.Errorf("focus is %d, want the chosen %d", got, want)
+	}
+
+	// And closing without choosing restores exactly.
+	if err := n.GoTo(2); err != nil {
+		t.Fatal(err)
+	}
+	n.Advance(10)
+	// Taken HERE, not reused from before the choose: "exactly as it was" is a
+	// claim about what the gallery saved, and getting back to this screen by
+	// another road may leave the yaw a bit off in the last place.
+	yaw, focus = n.Yaw(), n.Focus()
+	if err := n.ToggleGallery(g); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.ToggleGallery(g); err != nil {
+		t.Fatal(err)
+	}
+	if n.Yaw() != yaw || n.Focus() != focus {
+		t.Errorf("closing left yaw %v focus %d, want %v and %d",
+			n.Yaw(), n.Focus(), yaw, focus)
+	}
+}
+
+// TestAGalleryOfTheWrongSizeIsRefused: a gallery this package did not build
+// cannot be checked by identity, so it is checked by how many screens it holds
+// — which is the most that can be known about it, and enough to catch the
+// mistake that matters.
+func TestAGalleryOfTheWrongSizeIsRefused(t *testing.T) {
+	r := mustPlace(t, desk, spread(3))
+	n := NewNav(r)
+	if err := n.ToggleGallery(&fakeGallery{n: r.Len() - 1}); !errors.Is(err, ErrNotOurs) {
+		t.Errorf("a five-screen gallery on a six-screen ribbon = %v, want %v", err, ErrNotOurs)
+	}
+	if n.Mode() != ModeRibbon {
+		t.Errorf("the refusal still changed the mode to %v", n.Mode())
 	}
 }

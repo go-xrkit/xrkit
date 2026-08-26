@@ -93,7 +93,7 @@ type Nav struct {
 	// the gallery's state that Nav owns: the selection lives in the [Gallery],
 	// where it is always meaningful, rather than here where it would need a
 	// sentinel for "no gallery is open".
-	gal *Gallery
+	gal Selectable
 	// saved is the ribbon as the gallery found it.
 	//
 	// Restoring it is an ASSIGNMENT of the numbers that were taken, not a
@@ -168,6 +168,23 @@ func (n *Nav) ToggleFullscreen() {
 	n.mode = ModeFullscreen
 }
 
+// Selectable is what a navigator needs of a gallery: how many screens it holds,
+// which one is highlighted, and the ability to move that highlight.
+//
+// It is an interface because the gallery in this package is not the only one
+// worth having. A consumer whose screens are FLAT — laid side by side rather
+// than round a cylinder — folds them into a grid of its own, and the navigator
+// has nothing to say about how that grid is drawn. What it needs is the
+// selection, and that is all this asks for.
+type Selectable interface {
+	// Len is how many screens the gallery holds.
+	Len() int
+	// Selected is the highlighted screen.
+	Selected() int
+	// Select highlights one, and refuses an index it does not have.
+	Select(i int) error
+}
+
 // ToggleGallery opens the gallery, or closes it and leaves the ribbon exactly as
 // it was.
 //
@@ -181,20 +198,29 @@ func (n *Nav) ToggleFullscreen() {
 //
 // Closing restores the yaw, the target, the focus and the MODE, so ⌥⌘Space from
 // a promoted screen and back again returns to that promoted screen. g must not
-// be nil, and must be a gallery of this Nav's ribbon: one built for another
-// ribbon would select screens that are not there.
-func (n *Nav) ToggleGallery(g *Gallery) error {
+// be nil, and must be a gallery of THIS ribbon: one built for another would
+// select screens that are not there. A [Gallery] is checked by identity, which
+// is exact; any other [Selectable] is checked by how many screens it holds,
+// which is the most that can be known about it.
+func (n *Nav) ToggleGallery(g Selectable) error {
 	if n.mode == ModeGallery {
 		n.restore()
 		return nil
 	}
-	if g.r != n.r {
-		return fmt.Errorf("%w: %d screens, not %d", ErrNotOurs, g.r.Len(), n.r.Len())
+	if own, ok := g.(*Gallery); ok {
+		if own.r != n.r {
+			return fmt.Errorf("%w: %d screens, not %d", ErrNotOurs, own.r.Len(), n.r.Len())
+		}
+	} else if g.Len() != n.r.Len() {
+		return fmt.Errorf("%w: %d screens, not %d", ErrNotOurs, g.Len(), n.r.Len())
 	}
 	n.saved.yaw, n.saved.target = n.yaw, n.target
 	n.saved.focus, n.saved.mode = n.focus, n.mode
 	n.gal, n.mode = g, ModeGallery
-	g.sel = n.r.Nearest(n.yaw)
+	// Selecting through the interface rather than by writing the field: a
+	// gallery this package did not build has its own idea of what an index is
+	// allowed to be, and Nearest is only ever a screen of this ribbon.
+	_ = g.Select(n.r.Nearest(n.yaw))
 	return nil
 }
 
