@@ -123,8 +123,11 @@ func ChooseDisplay(displays []Display, want string) (Display, error) {
 	}
 	if want != "" {
 		var hits []Display
+		low := strings.ToLower(want)
 		for _, d := range displays {
-			if strings.Contains(strings.ToLower(d.Name), strings.ToLower(want)) {
+			name := strings.ToLower(d.Name)
+			if strings.Contains(name, low) ||
+				(name != "" && strings.Contains(low, name)) {
 				hits = append(hits, d)
 			}
 		}

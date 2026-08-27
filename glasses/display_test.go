@@ -196,3 +196,58 @@ func TestStereoModeKnownBlindSpot(t *testing.T) {
 		t.Skip("threshold changed; re-read the comment on StereoMode")
 	}
 }
+
+// TestChooseDisplayMatchesAModelAgainstAShorterPanelName.
+//
+// This is a defect a person met the moment the settings window offered a tile
+// per headset: choosing the VITURE wrote "VITURE Luma Ultra" into the settings,
+// the panel publishes "VITURE", and the next session refused to start with
+// `no display matches "VITURE Luma Ultra"`.
+//
+// A headset's catalogue model and the name its panel publishes are routinely
+// different lengths and neither is wrong, so the match runs both ways.
+func TestChooseDisplayMatchesAModelAgainstAShorterPanelName(t *testing.T) {
+	attached := []Display{
+		{Name: "Odyssey G95NC", Width: 7680, Height: 2160, Primary: true},
+		{Name: "VITURE", Width: 1920, Height: 1200},
+	}
+
+	// The name inside the want: the case that was broken.
+	got, err := ChooseDisplay(attached, "VITURE Luma Ultra")
+	if err != nil {
+		t.Fatalf("a model name found nothing: %v", err)
+	}
+	if got.Name != "VITURE" {
+		t.Errorf("chose %q", got.Name)
+	}
+
+	// The want inside the name, which always worked and must keep working.
+	if got, err := ChooseDisplay(attached, "odyssey"); err != nil || got.Name != "Odyssey G95NC" {
+		t.Errorf("a substring of a name chose %q, %v", got.Name, err)
+	}
+
+	// Something that is neither is still refused, naming what there is: a
+	// looser match must not become a match to anything.
+	if _, err := ChooseDisplay(attached, "XREAL One S"); err == nil {
+		t.Error("a headset that is not attached was chosen anyway")
+	}
+
+	// A NAMELESS display is not matched by the second direction. The empty
+	// string is inside every want, so without the guard a display with no name
+	// answers for every headset ever asked for.
+	nameless := []Display{{Name: "", Width: 1920, Height: 1080}}
+	if _, err := ChooseDisplay(nameless, "VITURE Luma Ultra"); err == nil {
+		t.Error("a display with no name answered for a named headset")
+	}
+
+	// Two panels publishing the same short name stay ambiguous, which is the
+	// whole point of refusing: going full screen on the wrong one takes over
+	// the machine somebody was working on.
+	twins := []Display{
+		{Name: "VITURE", Width: 1920, Height: 1200},
+		{Name: "VITURE", Width: 1920, Height: 1200},
+	}
+	if _, err := ChooseDisplay(twins, "VITURE Luma Ultra"); err == nil {
+		t.Error("two identical panels were resolved by a coin toss")
+	}
+}
