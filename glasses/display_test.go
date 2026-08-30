@@ -251,3 +251,36 @@ func TestChooseDisplayMatchesAModelAgainstAShorterPanelName(t *testing.T) {
 		t.Error("two identical panels were resolved by a coin toss")
 	}
 }
+
+func TestHeadsetsAreTheOnesTheCatalogueKnows(t *testing.T) {
+	// A real headset name, a real monitor, and a laptop panel: only the first
+	// is glasses, and nothing here decides that by looking for a brand.
+	// A name the catalogue knows, taken from the catalogue rather than typed
+	// here: a model name written into a test is a model name to maintain in
+	// two places.
+	known := ""
+	for _, p := range catalogue {
+		if len(p.exact) > 0 {
+			known = p.exact[0]
+			break
+		}
+	}
+	if known == "" {
+		t.Skip("the catalogue names no display")
+	}
+	ds := []Display{
+		{Name: "Built-in Retina Display", Width: 2056, Height: 1329, Primary: true},
+		{Name: known, Width: 1920, Height: 1080},
+		{Name: "DELL U2723QE", Width: 3840, Height: 2160},
+	}
+	got := Headsets(ds)
+	if len(got) != 1 || got[0].Name != known {
+		t.Errorf("Headsets = %v, want just %q", got, known)
+	}
+	if got := Headsets(nil); got != nil {
+		t.Errorf("Headsets(nil) = %v, want nothing", got)
+	}
+	if got := Headsets([]Display{{Name: "DELL U2723QE"}}); got != nil {
+		t.Errorf("Headsets of a monitor = %v, want nothing", got)
+	}
+}
