@@ -224,3 +224,23 @@ func StereoMode(w, h int) (stereoscopic bool, eyeW, eyeH int) {
 	}
 	return false, w, h
 }
+
+// Headsets are the displays this package RECOGNISES as glasses.
+//
+// Recognition is the catalogue's, not a guess: [Identify] answers from a table
+// of models, which a person can extend with their own file. Nothing here knows
+// a brand by name.
+//
+// It exists because "the one you asked for" and "the one that is plugged in"
+// are different questions, and an application that can only answer the first
+// waits for ever for a headset that is not on the desk. Asked this, it can say
+// "you chose that one, this one is here" -- or, when there are two, ask.
+func Headsets(displays []Display) []Display {
+	var out []Display
+	for _, d := range displays {
+		if _, ok := Identify(d.Name); ok {
+			out = append(out, d)
+		}
+	}
+	return out
+}
