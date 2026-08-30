@@ -430,3 +430,40 @@ func TestModelsAreListedInOrder(t *testing.T) {
 		t.Errorf("Models() is not sorted: %v", got)
 	}
 }
+
+func TestNamesAreAllRecognised(t *testing.T) {
+	names := Names()
+	if len(names) == 0 {
+		t.Fatal("the catalogue names nothing")
+	}
+	for _, n := range names {
+		if _, ok := Identify(n); !ok {
+			t.Errorf("Names offered %q, which Identify does not recognise", n)
+		}
+	}
+	// Sorted and without repeats: this is a list somebody reads and a list
+	// something iterates.
+	for i := 1; i < len(names); i++ {
+		if names[i-1] >= names[i] {
+			t.Errorf("Names is not sorted, or repeats: %q then %q", names[i-1], names[i])
+		}
+	}
+	// And it is the CATALOGUE's list, not a copy: every name comes from a
+	// profile that is in it.
+	in := make(map[string]bool, len(names))
+	for _, n := range names {
+		in[n] = true
+	}
+	found := 0
+	for _, p := range catalogue {
+		for _, n := range append(append([]string{}, p.exact...), p.match...) {
+			if in[n] {
+				found++
+				break
+			}
+		}
+	}
+	if found != len(names) {
+		t.Errorf("%d of %d names come from a profile in the catalogue", found, len(names))
+	}
+}
