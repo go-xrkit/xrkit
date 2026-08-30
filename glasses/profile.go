@@ -633,10 +633,16 @@ func appendModel(names []string, seen map[string]bool, model string) ([]string, 
 // Every name here satisfies [Identify]; that is the whole contract, and it is
 // what makes a stand-in indistinguishable from the real thing to the rest of
 // this package.
-func Names() []string {
-	seen := make(map[string]bool, len(catalogue))
-	out := make([]string, 0, len(catalogue))
-	for _, p := range catalogue {
+func Names() []string { return namesOf(catalogue) }
+
+// namesOf is Names over any list of profiles, so a test can hand it the shapes
+// the real catalogue does not happen to contain today -- a model named only by
+// a substring, one named twice, one named by something Identify will not place.
+// Those branches exist for catalogue entries nobody has written yet.
+func namesOf(ps []Profile) []string {
+	seen := make(map[string]bool, len(ps))
+	out := make([]string, 0, len(ps))
+	for _, p := range ps {
 		name := ""
 		switch {
 		case len(p.exact) > 0:
