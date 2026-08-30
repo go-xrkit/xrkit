@@ -620,3 +620,48 @@ func appendModel(names []string, seen map[string]bool, model string) ([]string, 
 	seen[model] = true
 	return append(names, model), seen
 }
+
+// Names are display names this package RECOGNISES as a headset, one per model
+// it knows, sorted.
+//
+// It exists for the callers that have to produce a headset rather than react to
+// one: a test bench that stands a made display in for a pair of glasses, and
+// anything that has to show a person the list. Both would otherwise write a
+// model name down, and a model name written down somewhere else is a catalogue
+// with a second copy that nobody updates.
+//
+// Every name here satisfies [Identify]; that is the whole contract, and it is
+// what makes a stand-in indistinguishable from the real thing to the rest of
+// this package.
+func Names() []string { return namesOf(catalogue) }
+
+// namesOf is Names over any list of profiles, so a test can hand it the shapes
+// the real catalogue does not happen to contain today -- a model named only by
+// a substring, one named twice, one named by something Identify will not place.
+// Those branches exist for catalogue entries nobody has written yet.
+func namesOf(ps []Profile) []string {
+	seen := make(map[string]bool, len(ps))
+	out := make([]string, 0, len(ps))
+	for _, p := range ps {
+		name := ""
+		switch {
+		case len(p.exact) > 0:
+			name = p.exact[0]
+		case len(p.match) > 0:
+			name = p.match[0]
+		}
+		if name == "" || seen[name] {
+			continue
+		}
+		// Only a name that really does identify the model it came from. A
+		// substring that needs more of the string around it -- a brand on its
+		// own, say -- would name a headset this package then failed to place.
+		if _, ok := Identify(name); !ok {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
