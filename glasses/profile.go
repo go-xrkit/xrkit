@@ -113,19 +113,22 @@ type USB struct {
 	// USB 2.0 high speed, 5000 and 10000 are SuperSpeed. 0 means the caller did
 	// not say.
 	//
-	// It answers, on its own, the question that took a day: a headset that
-	// enumerates at 480 CANNOT present a picture, whatever else is right.
-	// DisplayPort Alt Mode rides on the SuperSpeed differential pairs, so a
-	// link that never came up on them has no lanes to carry video, and no
-	// setting, driver or preferences file will change that. It is a cable or a
-	// connector, and nothing else.
+	// IT DOES NOT SAY WHETHER VIDEO IS FLOWING, and a previous version of this
+	// comment claimed it did. The claim was that a headset enumerating at 480
+	// cannot present a picture, because DisplayPort Alt Mode rides on the
+	// SuperSpeed pairs. The premise is right and the conclusion is wrong: in
+	// the four-lane pin assignments, DisplayPort takes ALL FOUR SuperSpeed
+	// pairs and leaves USB 2.0 for data. So a headset showing a perfect picture
+	// over four lanes reports 480 -- by design, and not as a fault.
 	//
-	// MEASURED, with a control, on the machine this was written for: the USB3
-	// hub on the desk reported SuperSpeed and its children the same, while an
-	// XREAL 1S one hop from a root port on a controller of its own reported
-	// high speed -- USB 2.0 -- and macOS listed no display for it, no audio
-	// from it, and it put up no Billboard of its own because an alternate mode
-	// was never even in question.
+	// Measured the hard way: a pair of glasses reported 480 with no picture, a
+	// cable known to be Thunderbolt 5 was fitted, and they still reported 480
+	// and still showed nothing. The number had not moved because it was never
+	// the thing that was wrong.
+	//
+	// What it is good for is the opposite reading. A headset at 5000 or 10000
+	// is NOT in a four-lane assignment, so at most two DisplayPort lanes are
+	// available to it, which bounds the modes it can be asked for.
 	SpeedMbps int
 }
 
