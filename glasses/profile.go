@@ -373,7 +373,24 @@ var catalogue = []Profile{
 	{Model: "XREAL 1S", match: []string{"xreal 1s", "xreal one s"}, exact: []string{"1s"},
 		usbVendor: 0x3318, usbProducts: []uint16{0x043d, 0x043e},
 		PublishedFOV: 52, Axis: AxisDiagonal, EyeWidth: 1920, EyeHeight: 1200,
-		Source: "https://docs.xreal.com/XREALDevices/XREAL%20Glasses"},
+		Confidence: Enumerated,
+		Source:     "https://docs.xreal.com/XREALDevices/XREAL%20Glasses"},
+	// XREAL sells these two under a partner's name and publishes no optics for
+	// them, so they carry NONE: PublishedFOV 0 with AxisUnstated makes Known()
+	// report false, and a caller that needs a field of view is told there is
+	// not one rather than given a number nobody stands behind.
+	//
+	// The ids come from another project's device table -- read, not guessed --
+	// and are here so the bus NAMES the hardware instead of falling back to
+	// "some XREAL device". That table also gives them a field of view, but it
+	// is a driver's own rendering constant rather than anything the maker
+	// published, and this field is called PublishedFOV.
+	{Model: "XREAL xbx a01", match: []string{"xreal xbx a01"}, exact: []string{"xbx a01"},
+		usbVendor: 0x3318, usbProducts: []uint16{0x0440},
+		Source: "https://github.com/wheaney/XRLinuxDriver/blob/main/src/devices/xreal.c"},
+	{Model: "XREAL xbx a01+", match: []string{"xreal xbx a01+"}, exact: []string{"xbx a01+"},
+		usbVendor: 0x3318, usbProducts: []uint16{0x0442},
+		Source: "https://github.com/wheaney/XRLinuxDriver/blob/main/src/devices/xreal.c"},
 	{Model: "XREAL Air 2 Ultra", match: []string{"xreal air 2 ultra"}, exact: []string{"air 2 ultra"},
 		usbVendor: 0x3318, usbProducts: []uint16{0x0426},
 		PublishedFOV: 52, Axis: AxisDiagonal, EyeWidth: 1920, EyeHeight: 1080,
