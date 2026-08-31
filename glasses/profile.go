@@ -92,6 +92,23 @@ type USB struct {
 	// Name is the device's product string, as iProduct reports it — for
 	// example "VITURE Luma Ultra XR GLASSES".
 	Name string
+	// Hops is how far the device is from the machine's own port: 1 is plugged
+	// straight in, 2 is behind one hub, and so on. 0 means the caller did not
+	// say.
+	//
+	// It is here because it is the difference between two OPPOSITE pieces of
+	// advice for the same symptom. A headset that enumerates and presents no
+	// display is usually a hub that does not pass the DisplayPort lanes -- and
+	// telling somebody to plug the glasses in directly when they already have
+	// sends them to check the one thing that is right. Measured on the machine
+	// that asked: the glasses one hop from a root port on a controller of their
+	// own, the whole dock two and three hops away on another.
+	//
+	// A COUNT rather than a platform id, because every platform can say it and
+	// none of them says it the same way: macOS packs the port path into the
+	// nibbles of a LocationID, Linux spells it in the device name (1-2 is
+	// direct, 1-2.3 is behind a hub).
+	Hops int
 }
 
 // How says which evidence identified a profile, so a caller can tell a model it
