@@ -109,6 +109,24 @@ type USB struct {
 	// nibbles of a LocationID, Linux spells it in the device name (1-2 is
 	// direct, 1-2.3 is behind a hub).
 	Hops int
+	// SpeedMbps is what the USB link negotiated, in megabits per second: 480 is
+	// USB 2.0 high speed, 5000 and 10000 are SuperSpeed. 0 means the caller did
+	// not say.
+	//
+	// It answers, on its own, the question that took a day: a headset that
+	// enumerates at 480 CANNOT present a picture, whatever else is right.
+	// DisplayPort Alt Mode rides on the SuperSpeed differential pairs, so a
+	// link that never came up on them has no lanes to carry video, and no
+	// setting, driver or preferences file will change that. It is a cable or a
+	// connector, and nothing else.
+	//
+	// MEASURED, with a control, on the machine this was written for: the USB3
+	// hub on the desk reported SuperSpeed and its children the same, while an
+	// XREAL 1S one hop from a root port on a controller of its own reported
+	// high speed -- USB 2.0 -- and macOS listed no display for it, no audio
+	// from it, and it put up no Billboard of its own because an alternate mode
+	// was never even in question.
+	SpeedMbps int
 }
 
 // How says which evidence identified a profile, so a caller can tell a model it
