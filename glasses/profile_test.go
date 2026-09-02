@@ -485,3 +485,72 @@ func TestNamesOfCoversTheShapesTheCatalogueDoesNotHaveYet(t *testing.T) {
 			"unrecognised are all left out", got, real)
 	}
 }
+
+func TestVendorsNamesEveryMakerOnce(t *testing.T) {
+	got := Vendors()
+	if len(got) == 0 {
+		t.Fatal("Vendors named nobody, so a caller has nothing to enumerate")
+	}
+	seen := make(map[uint16]bool, len(got))
+	for i, v := range got {
+		if v == 0 {
+			t.Error("Vendors named vendor 0, which is not a vendor")
+		}
+		if seen[v] {
+			t.Errorf("vendor %#04x listed twice", v)
+		}
+		seen[v] = true
+		if i > 0 && got[i-1] >= v {
+			t.Errorf("vendor %#04x follows %#04x, so the list is not sorted", v, got[i-1])
+		}
+	}
+	// The makers whose hardware this has been tested against must be in it, or
+	// the list is not the one the catalogue is built from.
+	for _, want := range []uint16{0x35ca, 0x3318} {
+		if !seen[want] {
+			t.Errorf("vendor %#04x is in the catalogue but not in Vendors()", want)
+		}
+	}
+	// Every vendor listed must belong to some profile, which is the direction
+	// the loop above cannot check.
+	for _, v := range got {
+		found := false
+		for _, p := range catalogue {
+			if p.usbVendor == v {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("vendor %#04x is listed but belongs to no built-in profile", v)
+		}
+	}
+}
+
+func TestVendorsIncludesUserDeclaredMakers(t *testing.T) {
+	isolate(t)
+	before := len(Vendors())
+	// A vendor id no real maker uses, so this cannot collide with the
+	// catalogue and cannot be mistaken for evidence about real hardware.
+	const invented = 0xfffe
+	if err := Register(Declaration{
+		Model:       "Test Headset",
+		USBVendor:   invented,
+		USBProducts: []uint16{0x0001},
+		FOV:         50,
+		Axis:        AxisDiagonal,
+		Source:      "invented for a test",
+	}); err != nil {
+		t.Fatalf("Register refused a well-formed declaration: %v", err)
+	}
+	got := Vendors()
+	if len(got) != before+1 {
+		t.Errorf("Vendors went from %d to %d entries, want one more", before, len(got))
+	}
+	for _, v := range got {
+		if v == invented {
+			return
+		}
+	}
+	t.Errorf("a user-declared vendor %#04x is not listed", invented)
+}
