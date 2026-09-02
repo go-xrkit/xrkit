@@ -720,3 +720,32 @@ func namesOf(ps []Profile) []string {
 	sort.Strings(out)
 	return out
 }
+
+// Vendors lists the USB vendor ids the catalogue knows, sorted, so a caller can
+// ASK FOR those devices instead of asking for every device.
+//
+// The distinction is not a nicety. On macOS a HID enumeration that matches
+// everything opens the HID manager over the whole matched set, and that open is
+// ALL OR NOTHING: one device the process may not open -- a keyboard, without
+// Input Monitoring consent -- and the call fails, returning no devices at all
+// rather than the ones it could see. A vendor-filtered enumeration asks for a
+// handful of devices nobody guards, and succeeds.
+//
+// User-declared models contribute their vendors too, so a headset added by
+// configuration is enumerated on the same terms as a built-in one.
+func Vendors() []uint16 {
+	userMu.RLock()
+	defer userMu.RUnlock()
+	seen := make(map[uint16]bool, len(catalogue)+len(userCatalogue))
+	out := make([]uint16, 0, len(seen))
+	for _, list := range [][]Profile{catalogue, userCatalogue} {
+		for _, p := range list {
+			if p.usbVendor != 0 && !seen[p.usbVendor] {
+				seen[p.usbVendor] = true
+				out = append(out, p.usbVendor)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
