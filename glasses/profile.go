@@ -749,3 +749,14 @@ func Vendors() []uint16 {
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
 }
+
+// Vendor is the USB vendor id of this model's maker, or 0 when the catalogue
+// does not record one.
+//
+// It exists so a caller can tell TWO ATTACHED HEADSETS apart. A machine with a
+// pair of VITURE glasses and a pair of XREAL glasses plugged in at once offers
+// two devices that each name a model perfectly well, and the display being
+// drawn on decides which of them is the one in front of the user. The display
+// name names a brand reliably even when it cannot name a model, so the vendor
+// behind that brand is the thing to match on.
+func (p Profile) Vendor() uint16 { return p.usbVendor }

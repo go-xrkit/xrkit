@@ -554,3 +554,25 @@ func TestVendorsIncludesUserDeclaredMakers(t *testing.T) {
 	}
 	t.Errorf("a user-declared vendor %#04x is not listed", invented)
 }
+
+func TestVendorTellsTwoAttachedHeadsetsApart(t *testing.T) {
+	// The situation this is for: both makers' glasses plugged in at once.
+	viture, howV := IdentifyDevice("VITURE", &USB{Vendor: 0x35ca, Product: 0x1104})
+	xreal, howX := IdentifyDevice("XREAL 1S", &USB{Vendor: 0x3318, Product: 0x043e})
+	if howV != ByUSBProduct || howX != ByUSBProduct {
+		t.Fatalf("identified by %v and %v, want the USB product for both", howV, howX)
+	}
+	if viture.Vendor() == xreal.Vendor() {
+		t.Fatal("two makers share a vendor id, so it cannot tell them apart")
+	}
+	// And the brand a display name alone identifies carries the same vendor as
+	// the model behind it, which is what makes the match work.
+	brand, _ := IdentifyDevice("VITURE", nil)
+	if brand.Vendor() != viture.Vendor() {
+		t.Errorf("the brand %q carries vendor %#04x and the model %q carries %#04x",
+			brand.Model, brand.Vendor(), viture.Model, viture.Vendor())
+	}
+	if got := (Profile{}).Vendor(); got != 0 {
+		t.Errorf("an empty profile claims vendor %#04x", got)
+	}
+}
