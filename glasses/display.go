@@ -122,10 +122,31 @@ func ChooseDisplay(displays []Display, want string) (Display, error) {
 		return Display{}, fmt.Errorf("glasses: no displays attached")
 	}
 	if want != "" {
-		var hits []Display
 		low := strings.ToLower(want)
+		// ⭐⭐ AN EXACT NAME WINS OUTRIGHT, and nothing else is even considered.
+		//
+		// ⛔ WITHOUT THIS, ASKING FOR THE RIGHT HEADSET BY ITS FULL NAME IS
+		// AMBIGUOUS. Measured with two VITURE headsets attached: a Beast
+		// presents a display called "VITURE Beast" and a Luma Ultra presents
+		// one called just "VITURE" -- so a settings file asking for
+		// "VITURE Beast" matched BOTH, because the loose clause below asks
+		// whether the WANTED name contains the DISPLAY's, and "viture beast"
+		// contains "viture".
+		//
+		// Two hits is an error, so the desk refused to start and opened the
+		// settings window instead -- every launch, on a machine where the
+		// answer was written down and exactly right. A convenience that
+		// overrules an exact answer is not a convenience.
+		for _, d := range displays {
+			if strings.EqualFold(d.Name, want) {
+				return d, nil
+			}
+		}
+		var hits []Display
 		for _, d := range displays {
 			name := strings.ToLower(d.Name)
+			// Either way round, so "beast" finds "VITURE Beast" and a settings
+			// file naming a model finds a display named for its maker.
 			if strings.Contains(name, low) ||
 				(name != "" && strings.Contains(low, name)) {
 				hits = append(hits, d)

@@ -284,3 +284,60 @@ func TestHeadsetsAreTheOnesTheCatalogueKnows(t *testing.T) {
 		t.Errorf("Headsets of a monitor = %v, want nothing", got)
 	}
 }
+
+// TestAnExactNameWinsOverOneThatMerelyContainsIt.
+//
+// ⛔⛔ THIS MADE THE DESK UNUSABLE WITH TWO HEADSETS ATTACHED. Measured: a
+// Beast presents a display called "VITURE Beast" and a Luma Ultra presents one
+// called just "VITURE". A settings file asking for "VITURE Beast" matched BOTH,
+// because the loose clause asks whether the WANTED name contains the DISPLAY's
+// -- and "viture beast" contains "viture".
+//
+// Two hits is an error, so the desk refused to start and opened the settings
+// window instead. Every launch. On a machine where the answer was written down
+// and exactly right.
+//
+// ⭐ A convenience that overrules an exact answer is not a convenience.
+func TestAnExactNameWinsOverOneThatMerelyContainsIt(t *testing.T) {
+	beast := Display{Name: "VITURE Beast", Width: 1920, Height: 1080}
+	luma := Display{Name: "VITURE", Width: 1920, Height: 1200}
+
+	got, err := ChooseDisplay([]Display{luma, beast}, "VITURE Beast")
+	if err != nil {
+		t.Fatalf("the exact name was refused: %v", err)
+	}
+	if got.Name != beast.Name {
+		t.Errorf("it chose %q", got.Name)
+	}
+	// The other way round, and in the other order, so the answer is not the
+	// order of the slice.
+	if got, err := ChooseDisplay([]Display{beast, luma}, "VITURE"); err != nil || got.Name != luma.Name {
+		t.Errorf("asking for the Luma gave %q, %v", got.Name, err)
+	}
+	// Case does not matter.
+	if got, err := ChooseDisplay([]Display{luma, beast}, "viture beast"); err != nil || got.Name != beast.Name {
+		t.Errorf("lower case gave %q, %v", got.Name, err)
+	}
+}
+
+// TestTheLooseMatchStillWorksWhenNothingIsExact, which is what it is for.
+func TestTheLooseMatchStillWorksWhenNothingIsExact(t *testing.T) {
+	beast := Display{Name: "VITURE Beast", Width: 1920, Height: 1080}
+	dell := Display{Name: "DELL U3417W", Width: 3440, Height: 1440}
+
+	// A fragment finds the one display that carries it.
+	if got, err := ChooseDisplay([]Display{dell, beast}, "beast"); err != nil || got.Name != beast.Name {
+		t.Errorf("a fragment gave %q, %v", got.Name, err)
+	}
+	// And a genuinely ambiguous request is still an error, because going full
+	// screen on the wrong monitor takes over the machine somebody is using.
+	one := Display{Name: "VITURE Beast"}
+	two := Display{Name: "VITURE Beast XR"}
+	if _, err := ChooseDisplay([]Display{one, two}, "viture"); err == nil {
+		t.Error("two loose hits were resolved by a coin toss")
+	}
+	// Nothing at all still says so.
+	if _, err := ChooseDisplay([]Display{dell}, "beast"); err == nil {
+		t.Error("a name nothing carries was accepted")
+	}
+}
