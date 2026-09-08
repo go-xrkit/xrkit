@@ -219,3 +219,116 @@ func abs(n int) int {
 	}
 	return n
 }
+
+// TestShiftRefusesWhatItCannotCompare: a missing profile is not a still view.
+func TestShiftRefusesWhatItCannotCompare(t *testing.T) {
+	full := noise(64)
+	for _, c := range []struct {
+		name string
+		a, b []float64
+	}{
+		{"nothing at all", nil, nil},
+		{"nothing to match against", full, nil},
+		{"nothing to match", nil, full},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, conf := Shift(c.a, c.b)
+			if got != 0 || conf != 0 {
+				t.Errorf("got %+d at confidence %.2f, want no motion and no confidence", got, conf)
+			}
+		})
+	}
+}
+
+// TestShiftHandlesProfilesThatDoNotOverlap.
+//
+// ⛔ EVERY OFFSET IS OFF THE END when one profile is shorter than the search
+// reaches. The loop must skip those rather than divide by a zero count, and the
+// answer must still be "no motion", not whatever the arithmetic left behind.
+func TestShiftHandlesProfilesThatDoNotOverlap(t *testing.T) {
+	short := noise(2)
+	if got, conf := Shift(short, short); got != 0 || conf < 0 || conf > 1 {
+		t.Errorf("two %d-bin profiles gave %+d at confidence %.2f", len(short), got, conf)
+	}
+}
+
+// TestSpreadOfAnEmptyProfileIsZero, so that Shift's guard on it cannot be
+// reached with a division waiting behind it.
+func TestSpreadOfAnEmptyProfileIsZero(t *testing.T) {
+	if got := spreadOf(nil); got != 0 {
+		t.Errorf("spreadOf(nil) = %v", got)
+	}
+}
+
+// TestSpreadOfAFlatProfileIsZero: it is the shortcut that keeps a blank picture
+// from ever reaching the search.
+func TestSpreadOfAFlatProfileIsZero(t *testing.T) {
+	flat := []float64{7, 7, 7, 7}
+	if got := spreadOf(flat); got != 0 {
+		t.Errorf("spreadOf(flat) = %v, want 0", got)
+	}
+	// And a profile with structure is not zero, so the guard cannot fire on one.
+	if got := spreadOf([]float64{1, 9, 1, 9}); got <= 0 {
+		t.Errorf("spreadOf of a varying profile = %v", got)
+	}
+}
+
+// TestConfidenceIsClampedWhenTheMatchIsWorseThanNothing.
+//
+// ⛔ TWO PICTURES CAN BE FULL OF STRUCTURE AND SHARE NONE OF IT -- somebody
+// steps in front of the camera, the lights change, or a head whips round further
+// in one frame than the search can reach. The best offset then fits WORSE than
+// lining nothing up would, which is a negative score, and a confidence outside
+// [0,1] would be a number no caller could compare against a threshold.
+func TestConfidenceIsClampedWhenTheMatchIsWorseThanNothing(t *testing.T) {
+	a, b := noise(480), differentNoise(480)
+	got, conf := Shift(a, b)
+	if conf < 0 || conf > 1 {
+		t.Errorf("two unrelated pictures scored %.3f, outside [0,1]", conf)
+	}
+	if conf >= 0.3 {
+		t.Errorf("two unrelated pictures matched at confidence %.2f (offset %+d), "+
+			"which a caller would take for a reading", conf, got)
+	}
+}
+
+// differentNoise is a second sequence sharing nothing with [noise].
+func differentNoise(n int) []float64 {
+	out := make([]float64, n)
+	x := uint32(98765)
+	for i := range out {
+		x = x*22695477 + 1
+		out[i] = 500 + float64(x>>20)
+	}
+	return out
+}
+
+// TestAnInvertedPictureScoresBelowZeroAndIsClampedToIt.
+//
+// ⛔ THE LOWER CLAMP NEEDS A PICTURE THAT IS THE OPPOSITE OF THE OTHER, not
+// merely a different one: two unrelated profiles still line up passably at some
+// offset out of the hundred and twenty-nine tried. A profile inverted about its
+// own mean cannot. Every bin is then wrong by twice the deviation, so the raw
+// score is about -1 -- and a confidence of -1 handed to a caller comparing
+// against a threshold is worse than useless, because it sorts BELOW every honest
+// refusal instead of alongside them.
+//
+// A photographic negative is the picture this describes: all the structure,
+// none of it shared.
+func TestAnInvertedPictureScoresBelowZeroAndIsClampedToIt(t *testing.T) {
+	a := noise(480)
+	var mean float64
+	for _, v := range a {
+		mean += v
+	}
+	mean /= float64(len(a))
+	b := make([]float64, len(a))
+	for i, v := range a {
+		b[i] = 2*mean - v
+	}
+	got, conf := Shift(a, b)
+	if conf != 0 {
+		t.Errorf("an inverted picture scored %.3f (offset %+d), want exactly 0: "+
+			"anything negative escapes the range every caller compares against", conf, got)
+	}
+}

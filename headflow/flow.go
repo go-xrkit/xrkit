@@ -113,14 +113,20 @@ func Shift(a, b []float64) (int, float64) {
 	if spread <= 0 {
 		return 0, 0
 	}
-	conf := 1 - bestErr/spread
-	switch {
-	case conf < 0:
-		conf = 0
-	case conf > 1:
-		conf = 1
+	// ⛔ ONLY THE LOWER BOUND NEEDS GUARDING, and a coverage gate is what proved
+	// it: the clamp above 1 could never run. bestErr is a mean of absolute
+	// differences, so it is never negative, and spread is positive here -- which
+	// leaves conf at most 1 by construction. Defensive code that cannot execute
+	// is not caution, it is a line nobody can ever have tested.
+	//
+	// Below zero is a different matter and does happen: a picture inverted about
+	// its own mean is wrong everywhere by twice the deviation, and scores about
+	// -1. Handing a caller a negative confidence would sort it BELOW every
+	// honest refusal instead of alongside them.
+	if conf := 1 - bestErr/spread; conf > 0 {
+		return best, conf
 	}
-	return best, conf
+	return best, 0
 }
 
 // searchOrder lists the offsets to try, nearest to zero first. The order is the

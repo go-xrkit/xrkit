@@ -168,3 +168,85 @@ func TestTurningBackAndForthReturnsNearZero(t *testing.T) {
 		t.Errorf("after going out and back the yaw is %v, not zero", tr.Yaw())
 	}
 }
+
+// TestConfidenceIsWhatTheLastFrameScored, which is what an application shows
+// when it wants to say how well it can see rather than merely whether it can.
+func TestConfidenceIsWhatTheLastFrameScored(t *testing.T) {
+	cols := noise(640)
+	var tr Tracker
+	if got := tr.Confidence(); got != 0 {
+		t.Errorf("a tracker that has seen nothing reports confidence %.2f", got)
+	}
+	tr.Feed(frame(cols, 0, 1))
+	tr.Feed(frame(cols, 5, 2))
+	if got := tr.Confidence(); got < MinConfidence {
+		t.Errorf("a clear slide scored %.2f, below the threshold it was accepted at", got)
+	}
+}
+
+// TestAFrameWithNoPixelsIsRefused: an empty image profiles to nothing, and
+// nothing cannot be a reference or a measurement.
+func TestAFrameWithNoPixelsIsRefused(t *testing.T) {
+	var tr Tracker
+	yaw, ok := tr.Feed(image.NewRGBA(image.Rect(0, 0, 0, 0)))
+	if ok {
+		t.Error("an image with no pixels was accepted")
+	}
+	if yaw != 0 {
+		t.Errorf("an image with no pixels moved the yaw to %v", yaw)
+	}
+}
+
+// TestABlankFirstFrameIsRefusedAsAReference.
+//
+// ⛔⛔ THE PATH THAT ONCE REPORTED A DARK ROOM AS HEALTHY. Judging a frame only
+// by how well it matched another let the very first one be a blank, which then
+// became the reference everything after it was compared against.
+func TestABlankFirstFrameIsRefusedAsAReference(t *testing.T) {
+	blank := image.NewRGBA(image.Rect(0, 0, 320, 240))
+	for i := range blank.Pix {
+		blank.Pix[i] = 200
+	}
+	var tr Tracker
+	if _, ok := tr.Feed(blank); ok {
+		t.Error("a blank first frame was accepted")
+	}
+	if tr.Unusable() != 1 {
+		t.Errorf("Unusable is %d after a blank first frame", tr.Unusable())
+	}
+	if tr.Tracking() {
+		t.Error("Tracking is true having never seen anything")
+	}
+}
+
+// TestAStructuredFrameThatMatchesNothingIsStillRefused.
+//
+// ⛔⛔ NOT EVERY UNUSABLE FRAME IS A DARK ONE. A picture can be full of detail
+// and share none of it with the one before -- somebody steps in front of the
+// camera, the lights change, or the head turns further in one frame than the
+// search reaches. The check on a frame's own structure lets this one through,
+// so the confidence has to catch it, and the yaw must not move on a match that
+// means nothing.
+func TestAStructuredFrameThatMatchesNothingIsStillRefused(t *testing.T) {
+	cols := noise(640)
+	var tr Tracker
+	tr.Feed(frame(cols, 0, 1))
+	before, ok := tr.Feed(frame(cols, 4, 2))
+	if !ok {
+		t.Fatal("a clear slide was refused")
+	}
+	// An entirely different scene, with plenty of structure of its own.
+	yaw, ok := tr.Feed(frame(differentNoise(640), 0, 9))
+	if ok {
+		t.Error("a frame sharing nothing with the last was accepted as a measurement")
+	}
+	if yaw != before {
+		t.Errorf("an unmatchable frame moved the yaw from %v to %v", before, yaw)
+	}
+	if tr.Tracking() {
+		t.Error("Tracking stayed true through a frame that matched nothing")
+	}
+	if tr.Unusable() != 1 {
+		t.Errorf("Unusable is %d after one unmatchable frame", tr.Unusable())
+	}
+}
