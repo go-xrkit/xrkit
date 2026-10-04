@@ -9,7 +9,22 @@ on:
 permissions:
   contents: read
 
-# Track the latest stable Go (org convention). go.mod floor is 1.26.4.
+# PINNED to go 1.27.1, matching the go.mod floor -- not "stable".
+#
+# A channel alias is not a version: nothing compares it, so nothing opens a pull
+# request, and the 1.26 -> 1.27 MINOR arrived here with no commit to review.
+# That matters for this repository in particular, because a minor Go changes
+# gofmt and recounts basic blocks, and the lane below gates TOTAL coverage at
+# exactly 100% with no margin. Measured on one commit before pinning: 100.0% on
+# 171 functions under both 1.26.4 and 1.27.1.
+#
+# And "arch loong64 (qemu)" EXECUTES the suite, so golang/go#81000 -- a
+# byte-sized result spilled with an 8-byte MOVD -- can actually reach it. The
+# backport #81147 is still open: go1.27.1 ships (Cvt64Fto32 ...) => (TRUNCDW
+# ...) with 25 op-codes declared reg: fp11. This code emits 12 of the four
+# conversions (11 TRUNCDV, 1 TRUNCDW) in place, sampleIndex, stepper,
+# ScalingAdvice, ceilInt and buildVTab -- so that lane is the witness, not an
+# argument. If it goes red, pin back to 1.26.x and say so here.
 jobs:
   # A workflow that fails to PARSE reports nothing at all -- no red cross, no
   # run, just silence that reads exactly like success. actionlint is the only
@@ -31,7 +46,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: '1.27.1'
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
@@ -52,7 +67,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: '1.27.1'
       - run: go version
       - run: go vet ./...
       - run: go build ./...
@@ -85,7 +100,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: '1.27.1'
       - run: go env GOARCH && go test ./...
 
   arch-qemu:
@@ -103,7 +118,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: '1.27.1'
       - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
       - name: Test under qemu (${{ matrix.goarch }})
         run: GOARCH=${{ matrix.goarch }} go test -exec=${{ matrix.qemu }} ./...
