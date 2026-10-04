@@ -256,7 +256,14 @@ package got wrong can be corrected without waiting for a release.
 
 ## Status
 
-These packages are complete and gated at 100% coverage. Still to come:
+These packages are complete and gated at 100% coverage — **171 functions, 100.0%
+under both `go1.26.4` and `go1.27.1`**. The toolchain belongs beside the figure:
+Go 1.27 breaks a basic block before an instruction that can panic, where 1.26
+folded those in, so the same code can read differently under the two compilers.
+The CI pins `go-version: '1.27.1'` and `go.mod` asks for the same patch, so a
+figure measured locally is one the gate agrees with.
+
+Still to come:
 screen capture, hardware video decode, a GPU warp, and the glasses' own head
 tracking — the last of which is not reachable over HID on the current VITURE
 generation (see `go-macos/iokit`), which is why the ribbon is driven by the
