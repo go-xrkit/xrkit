@@ -29,6 +29,45 @@ import (
 // past their landmark on it, which would account for exactly that excess.)
 const ColumnsPerDegree = 26.5
 
+// ReferenceWidth is the frame width that calibration was taken at.
+//
+// ⛔⛔ IT HAS TO BE NAMED, BECAUSE THE CALIBRATION IS NOT A PROPERTY OF THE
+// LENS. [ColumnsPerDegree] counts COLUMNS, and columns are a property of the
+// sensor READOUT: the same camera read out at 640 puts the same field of view
+// into a third as many of them, so the same physical turn slides a third as
+// far. A yaw computed from columns alone, on a 640-wide frame, comes out THREE
+// TIMES TOO SMALL — with no error and no loss of confidence. A plausible
+// number, silently wrong, which is the worst kind.
+//
+// It was not a live defect while one camera fed this through one path. It became
+// one when go-xrkit/android negotiated 640x480 on the Beast's camera — 25 fps
+// there against 5 at 1920, and latency is what head tracking is bounded by —
+// while the macOS path kept feeding 1920. Both end up in this Tracker.
+const ReferenceWidth = 1920
+
+// HorizontalFOV is the camera's horizontal field of view, in degrees.
+//
+// ⭐ IT IS A RESTATEMENT OF THE MEASUREMENT ABOVE AND NOT A NEW NUMBER. The
+// three turns gave columns; dividing by the width they were counted at gives
+// degrees, which is what the lens actually has and what does not change with
+// readout. 1920/26.5 is about 72.45 degrees — the figure [ColumnsPerDegree]'s
+// own documentation already derived as the free control on the whole method.
+const HorizontalFOV = float64(ReferenceWidth) / ColumnsPerDegree
+
+// ColumnsPerDegreeAt is how far the picture slides for one degree of turn, in a
+// frame of the given width.
+//
+// It returns 0 for a width of 0 rather than an infinity: such a frame is refused
+// upstream by [Profile], and the arithmetic must not be the thing that catches
+// it — dividing by zero here gives a yaw of ±Inf, which an application will
+// render without complaint.
+func ColumnsPerDegreeAt(width int) float64 {
+	if width <= 0 {
+		return 0
+	}
+	return float64(width) / HorizontalFOV
+}
+
 // MinConfidence is where a match stops being worth believing.
 //
 // ⛔ IT IS A REFUSAL, NOT A FILTER. Below this there is nothing wrong with the
@@ -113,7 +152,17 @@ func (t *Tracker) Feed(im *image.RGBA) (yaw float64, ok bool) {
 	// ⭐ THE SIGN. A picture that slides RIGHT means the view turned LEFT, which
 	// is why this subtracts. Getting it backwards is invisible in any test that
 	// only checks magnitudes, so it has one of its own.
-	t.yaw -= float64(bins*BinWidth) / ColumnsPerDegree * math.Pi / 180
+	//
+	// ⛔ AND THE SCALE IS THIS FRAME'S, NOT THE CALIBRATION FRAME'S. bins*BinWidth
+	// is columns of the frame just fed; see [ReferenceWidth] for why using the
+	// measured constant directly made a 640-wide stream read three times too
+	// small.
+	// ⚠ AND IT IS NOT GUARDED HERE, deliberately. A zero width would divide to
+	// an infinity, but [Profile] returned bins above, so the frame has columns:
+	// a branch no input can reach is dead code, which this package's coverage
+	// gate finds and which has been the right answer twice before. The guard
+	// lives in [ColumnsPerDegreeAt], where a caller may pass anything.
+	t.yaw -= float64(bins*BinWidth) / ColumnsPerDegreeAt(im.Bounds().Dx()) * math.Pi / 180
 	return t.yaw, true
 }
 

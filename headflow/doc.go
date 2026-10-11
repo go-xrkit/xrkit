@@ -21,6 +21,27 @@
 // against a model, and no state beyond the last profile. On a 1920x1080 frame it
 // costs under a millisecond.
 //
+// # The calibration is a field of view, not a number of columns
+//
+// ⛔⛔ AND IT HAS TO BE, BECAUSE A FRAME'S WIDTH IS NOT THE LENS'S. The
+// calibration was measured as columns a degree -- [ColumnsPerDegree], 26.5 --
+// on 1920-wide frames, and columns are a property of the sensor READOUT. The
+// same camera read out at 640 puts the same field of view into a third as many
+// of them, so the same physical turn slides a third as far. A yaw computed from
+// columns alone, on a 640-wide frame, comes out THREE TIMES TOO SMALL: no
+// error, no loss of confidence, just a plausible number that is wrong.
+//
+// It was not a live defect while one camera fed this through one path. It became
+// one when go-xrkit/android reached the Beast's camera through usbfs and
+// negotiated 640x480 -- 25 frames a second there against 5 at 1920, and latency
+// is what this is bounded by -- while the macOS path kept feeding 1920. Both end
+// up in the same [Tracker].
+//
+// So the stored figure is [HorizontalFOV], about 72.45 degrees, which is that
+// same measurement divided by the width it was taken at; [ColumnsPerDegreeAt]
+// puts it back into columns for whatever frame actually arrives. Every test in
+// this package ran at 640, which is why none of them could see it.
+//
 // # What it cannot do
 //
 //   - It measures YAW ONLY. Pitch and roll move the picture too, and this reads

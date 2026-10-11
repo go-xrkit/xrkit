@@ -63,7 +63,14 @@ func TestAPictureSlidingRightMeansTheViewTurnedLeft(t *testing.T) {
 		t.Errorf("the picture slid right and the yaw went %+.4f rad: a view that "+
 			"turns the wrong way is as wrong as one that does not turn", yaw)
 	}
-	want := -8 * BinWidth / ColumnsPerDegree * math.Pi / 180
+	// ⛔⛔ THIS EXPECTATION USED ColumnsPerDegree DIRECTLY, AND SO ASSERTED THE
+	// DEFECT. The frame this helper paints is 640 wide; the constant is 26.5
+	// columns a degree AT 1920. The test therefore agreed with a tracker that
+	// read every turn three times too small, and stayed green for as long as
+	// nothing else fed it — which is the whole shape of the bug. Derived from
+	// the frame's own width it is the same number the tracker computes, for the
+	// same reason.
+	want := -8 * BinWidth / ColumnsPerDegreeAt(640) * math.Pi / 180
 	if math.Abs(yaw-want) > 1e-9 {
 		t.Errorf("yaw %v, want %v", yaw, want)
 	}
