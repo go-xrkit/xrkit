@@ -278,22 +278,17 @@ func TestWhatItRefusesToDo(t *testing.T) {
 			t.Errorf("the error does not name the file: %v", err)
 		}
 	})
-	t.Run("a frame that cannot be opened", func(t *testing.T) {
-		dir := t.TempDir()
-		scene(t, dir, "frame-001.png", 320, 120, 0, 1)
-		scene(t, dir, "frame-002.png", 320, 120, 8, 2)
-		if err := os.Chmod(filepath.Join(dir, "frame-002.png"), 0); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			_ = os.Chmod(filepath.Join(dir, "frame-002.png"), 0o600)
-		})
-		if os.Geteuid() == 0 {
-			t.Skip("root reads a mode-0 file, so there is nothing to refuse here")
-		}
-		var out bytes.Buffer
-		if err := run([]string{dir}, &out); err == nil {
-			t.Error("an unreadable frame was accepted")
+	// ⛔⛔ A PATH THAT IS NOT THERE, AND readFrame CALLED DIRECTLY. The first
+	// version chmod'ed a frame to 0 and went through run, which cost two lanes
+	// at once: Windows has no POSIX permission bits so the read SUCCEEDED, and
+	// root ignores the mode so the test skipped itself in a container and took
+	// the coverage with it. A missing file fails on every platform and for every
+	// user, and calling the function that opens it needs no directory listing to
+	// cooperate. Its propagation through run is covered by the PNG that is not
+	// one, below.
+	t.Run("a frame that is not there", func(t *testing.T) {
+		if _, _, err := readFrame(filepath.Join(t.TempDir(), "frame-404.png")); err == nil {
+			t.Error("readFrame accepted a path with no file at it")
 		}
 	})
 }
