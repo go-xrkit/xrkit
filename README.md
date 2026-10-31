@@ -254,6 +254,63 @@ nothing is the same invisible failure as a wrong angle. Omit `fov` for a family
 entry. Your entry wins ties against the built-in catalogue, so a figure this
 package got wrong can be corrected without waiting for a release.
 
+## `headflow` — where the yaw comes from, when the headset will not say
+
+A VITURE Beast runs its own 3DOF tracking and **publishes no orientation at
+all**: measured three ways on 2026-09-07 — listening for unsolicited frames,
+asking for the documented orientation stream, and sweeping every readable
+message with the head still and then moving — and none of them produced a
+number. Its camera, though, is an ordinary UVC device, and a turn of the head is
+plainly visible in it.
+
+```go
+tr := &headflow.Tracker{}
+yaw, ok := tr.Feed(frame)                 // *image.RGBA from the camera
+deg := headflow.ColumnsPerDegreeAt(640)   // columns a degree at THIS width
+```
+
+A yaw slides the whole picture sideways together, so each column is summed into
+one number and that one-dimensional profile is slid against the previous frame's
+until it fits. No feature detection, no model, no state beyond the last profile;
+**under a millisecond** on a 1920×1080 frame, and **790 µs of an 88 ms interval**
+measured live on a Pixel 11 Pro Fold.
+
+### ⛔⛔ The calibration is a FIELD OF VIEW, not a number of columns
+
+It was first measured as columns a degree — `ColumnsPerDegree`, 26.5 — on
+1920-wide frames, and **columns are a property of the sensor readout**. The same
+camera read out at 640 puts the same field of view into a third as many of them,
+so the same physical turn slides a third as far: a yaw computed from columns
+alone on a 640-wide frame comes out **three times too small**, with no error and
+no loss of confidence, just a plausible number that is wrong.
+
+So the stored figure is `HorizontalFOV` (≈ 72.45°, that measurement divided by
+the width it was taken at) and `ColumnsPerDegreeAt` puts it back into columns for
+whatever frame arrives. The defect was dormant while one camera fed one path, and
+became live when `go-xrkit/android` negotiated 640×480 while macOS kept feeding
+1920 — into the same `Tracker`.
+
+### What it is good enough for, measured
+
+| | |
+| --- | --- |
+| swept on a head and returned to the start | residual **1.14 %** of the distance travelled |
+| stationary, five minutes, 7474 frames | **exactly nothing** accumulated — it does not invent movement |
+| ⛔ held at **arm's length** | **10.53 %**, nine times worse: an arm moves the camera half a metre through the room as well as turning it, near things slide further than far ones, and one best-fit shift is a biased compromise. On a head it turns about its own centre |
+
+Those decide what it is for. *Which screen is somebody facing* — a discrete
+question, screens tens of degrees apart — is comfortable at the 107 ms this
+pipeline reaches. Holding a picture locked to the head at 1:1 wants latency under
+**20 ms** and is not. ⚠ And the margin moves with the camera: the same Beast
+delivered a 42 ms frame interval one evening and **100 ms** another, for an
+identical negotiation — see `go-xrkit/android`.
+
+It measures **yaw only** (pitch and roll move the picture too, and this reads the
+horizontal component of whatever happened), it is **not a pose** — no position,
+no gravity, no absolute heading — and it needs something to look at: a blank wall
+offers nothing to match, and `Tracker.Confidence` says so instead of inventing a
+number.
+
 ## Status
 
 These packages are complete and gated at 100% coverage — **171 functions, 100.0%
@@ -263,10 +320,13 @@ folded those in, so the same code can read differently under the two compilers.
 The CI pins `go-version: '1.27.1'` and `go.mod` asks for the same patch, so a
 figure measured locally is one the gate agrees with.
 
-Still to come:
-screen capture, hardware video decode, a GPU warp, and the glasses' own head
-tracking — the last of which is not reachable over HID on the current VITURE
-generation (see `go-macos/iokit`), which is why the ribbon is driven by the
-keyboard.
+Still to come: screen capture, hardware video decode, and a GPU warp.
+
+⚠ **Head tracking is no longer on that list**, and the entry that put it there
+needs its correction stated rather than deleted. What is unreachable is the
+glasses' **own** tracking — not over HID on the current VITURE generation (see
+`go-macos/iokit`) — and what exists instead is `headflow` above, which recovers
+**yaw** from the camera. The ribbon is still driven by the keyboard: yaw alone,
+at an interval the camera chooses, is not yet what a ribbon wants to follow.
 
 Licence: BSD-3-Clause.
